@@ -40,6 +40,11 @@ async function main() {
   });
   console.log(`[discover] ${projects.length} projects found`);
 
+  // 1.5 enrichment — initiatedAt은 임시로 슬롯 날짜 사용 (Task 14에서 플링커넥트 fetch로 교체)
+  for (const p of projects) {
+    p.initiatedAt = p.initiatedAt ?? date;
+  }
+
   // 2. session/context — try/finally로 close 보장
   let ctx;
   try {
@@ -130,7 +135,14 @@ async function main() {
 }
 
 async function safeRun(name, fn, errors, project) {
-  try { return await fn(); }
+  try {
+    const result = await fn();
+    // 체커가 내부 catch로 SKIP 반환한 경우에도 errors 통합 기록
+    if (result?.status === 'SKIP' && result?.evidence?.error) {
+      errors.push({ projectId: project.projectId, check: name, error: result.evidence.error });
+    }
+    return result;
+  }
   catch (e) {
     if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
     const msg = e?.message ?? String(e);
