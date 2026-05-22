@@ -1,0 +1,22 @@
+{
+  "threads": [
+    {
+      "id": "t1",
+      "subject": "[플러그링크] OO아파트 충전기 설치 안내",
+      "from": "daeyeol.yang@pluglink.kr",
+      "to": ["관리사무소@ooapt.com"],
+      "cc": ["woojung.kim@pluglink.kr"],
+      "date": "2026-05-20T14:00:00+09:00",
+      "snippet": "OO아파트 지하주차장 충전기 4대 설치가 완료되어..."
+    },
+    {
+      "id": "t2",
+      "subject": "ZZ아파트 견적 문의",
+      "from": "daeyeol.yang@pluglink.kr",
+      "to": ["zzapt@xxx.com"],
+      "cc": [],
+      "date": "2026-05-19T11:00:00+09:00",
+      "snippet": "ZZ아파트 견적서 첨부드립니다"
+    }
+  ]
+}
