@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { google } from 'googleapis';
 import path from 'node:path';
@@ -17,6 +17,7 @@ import { upsertManifest } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, 'config', '.env') });
 const args = parseArgs(process.argv.slice(2));
 const RETENTION_DAYS = Number(process.env.DATA_RETENTION_DAYS || 90);
 

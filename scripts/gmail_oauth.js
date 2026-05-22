@@ -16,8 +16,13 @@
  *   4. token exchange → refresh_token을 콘솔에 출력
  *   5. 출력된 refresh_token을 config/.env의 GMAIL_REFRESH_TOKEN= 에 붙여넣기
  */
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { google } from 'googleapis';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', 'config', '.env') });
 import http from 'node:http';
 import { exec } from 'node:child_process';
 
