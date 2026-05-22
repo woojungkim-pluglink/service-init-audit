@@ -20,7 +20,7 @@ section { margin: 16px 0; }
 .card.skip { border-left: 4px solid #9e9e9e; }
 .checks { display: flex; gap: 12px; margin-top: 6px; font-size: 13px; flex-wrap: wrap; }
 .checks span.pass { color: #2e7d32; }
-.checks span.warn { color: #ef6c00; }
+.checks span.warn { color: #bf360c; }
 .checks span.fail { color: #c62828; }
 .checks span.skip { color: #616161; }
 .evidence { margin-top: 8px; padding: 8px; background: #fafafa; border-radius: 4px; font-size: 12px; display: none; line-height: 1.6; }

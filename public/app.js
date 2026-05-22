@@ -28,8 +28,10 @@ async function init() {
 }
 
 function renderEmpty() {
-  document.getElementById('main').innerHTML =
-    '<div style="padding: 40px; color: #888;">아직 검증 데이터가 없습니다.</div>';
+  document.getElementById('header').textContent = '';
+  document.getElementById('summary').innerHTML = '아직 검증 데이터가 없습니다.';
+  document.getElementById('slot-morning').innerHTML = '';
+  document.getElementById('slot-evening').innerHTML = '';
 }
 
 function uniqueDates(slots) {
@@ -62,8 +64,13 @@ async function selectDate(date) {
 async function loadSlot(date, slot) {
   const entry = state.manifest.slots.find(s => s.date === date && s.slot === slot);
   if (!entry) return null;
-  const r = await fetch('/data/' + entry.file);
-  return r.json();
+  try {
+    const r = await fetch('/data/' + entry.file);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
 }
 
 function renderBody() {
