@@ -18,6 +18,7 @@ import { pruneDataDir } from './lib/retention.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const args = parseArgs(process.argv.slice(2));
+const RETENTION_DAYS = Number(process.env.DATA_RETENTION_DAYS || 90);
 
 async function main() {
   const slot = args.slot;
@@ -27,7 +28,7 @@ async function main() {
   const dataDir = path.join(__dirname, 'data');
   const logsDir = path.join(__dirname, 'logs');
   mkdirSync(dataDir, { recursive: true });
-  mkdirSync(logsDir, { recursive: true });
+  mkdirSync(logsDir, { recursive: true }); // Windows 스케줄러가 stdout/stderr 기록 시 사용
 
   console.log(`[audit] slot=${slot} date=${date} dryRun=${dryRun}`);
 
@@ -39,91 +40,102 @@ async function main() {
   });
   console.log(`[discover] ${projects.length} projects found`);
 
-  // 2. session 준비
-  const ctx = await buildContext({ dryRun });
+  // 2. session/context — try/finally로 close 보장
+  let ctx;
+  try {
+    ctx = await buildContext({ dryRun });
+  } catch (e) {
+    await closeSession();
+    throw e;
+  }
 
-  // 3. 체커 순회
-  const errors = [];
-  for (const p of projects) {
-    try {
-      p.checks = {};
-      p.checks.doc    = await safeRun('doc',    () => checkDoc(p, ctx),    errors, p);
-      p.checks.rate   = await safeRun('rate',   () => checkRate(p, ctx),   errors, p);
-      p.checks.status = await safeRun('status', () => checkStatus(p, ctx), errors, p);
-      p.checks.sheet  = await safeRun('sheet',  () => checkSheet(p, ctx),  errors, p);
-      p.overall = computeOverall(p.checks);
-    } catch (e) {
-      if (e.message === 'PLINKCONNECT_LOGIN_EXPIRED') {
-        await closeSession();
-        await sendDM({
-          token: process.env.SLACK_BOT_TOKEN,
-          userId: process.env.NOTIFY_SLACK_USER_ID,
-          text: '[audit] 플링커넥트 로그인 만료. chrome_profile 재인증 필요.',
-          dryRun
-        });
-        process.exit(2);
+  try {
+    // 3. 체커 순회
+    const errors = [];
+    for (const p of projects) {
+      try {
+        p.checks = {};
+        p.checks.doc    = await safeRun('doc',    () => checkDoc(p, ctx),    errors, p);
+        p.checks.rate   = await safeRun('rate',   () => checkRate(p, ctx),   errors, p);
+        p.checks.status = await safeRun('status', () => checkStatus(p, ctx), errors, p);
+        p.checks.sheet  = await safeRun('sheet',  () => checkSheet(p, ctx),  errors, p);
+        p.overall = computeOverall(p.checks);
+      } catch (e) {
+        if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') {
+          await sendDM({
+            token: process.env.SLACK_BOT_TOKEN,
+            userId: process.env.NOTIFY_SLACK_USER_ID,
+            text: '[audit] 플링커넥트 로그인 만료. chrome_profile 재인증 필요.',
+            dryRun
+          });
+          process.exitCode = 2;
+          return;
+        }
+        throw e;
       }
-      throw e;
     }
-  }
 
-  // 4. JSON 저장
-  const summary = computeSummary(projects);
-  const out = {
-    runAt: new Date().toISOString(),
-    slot, date,
-    sourceMessages: projects.map(p => ({
-      ts: p.ts, permalink: p.permalink,
-      stationLinks: [`https://connect.pluglink.kr/stations/${p.stationId}`]
-    })),
-    projects, summary, errors
-  };
-  const outFile = path.join(dataDir, `${date}-${slot}.json`);
-  writeFileSync(outFile, JSON.stringify(out, null, 2));
-  console.log(`[write] ${outFile}`);
+    // 4. JSON 저장
+    const summary = computeSummary(projects);
+    const out = {
+      runAt: new Date().toISOString(),
+      slot, date,
+      sourceMessages: projects.map(p => ({
+        ts: p.ts, permalink: p.permalink,
+        stationLinks: p.stationId ? [`https://connect.pluglink.kr/stations/${p.stationId}`] : []
+      })),
+      projects, summary, errors
+    };
+    const outFile = path.join(dataDir, `${date}-${slot}.json`);
+    writeFileSync(outFile, JSON.stringify(out, null, 2));
+    console.log(`[write] ${outFile}`);
 
-  // 5. manifest 갱신 + retention
-  const manifestPath = path.join(dataDir, 'index.json');
-  const manifest = existsSync(manifestPath)
-    ? JSON.parse(readFileSync(manifestPath, 'utf8'))
-    : { slots: [] };
-  const newManifest = upsertManifest(manifest, {
-    date, slot, file: `${date}-${slot}.json`, summary
-  }, { retentionDays: Number(process.env.DATA_RETENTION_DAYS || 90), today: date });
-  writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
-  pruneDataDir(dataDir, {
-    retentionDays: Number(process.env.DATA_RETENTION_DAYS || 90),
-    today: date
-  });
+    // 5. manifest 갱신 + retention
+    const manifestPath = path.join(dataDir, 'index.json');
+    const manifest = existsSync(manifestPath)
+      ? JSON.parse(readFileSync(manifestPath, 'utf8'))
+      : { slots: [] };
+    const newManifest = upsertManifest(manifest, {
+      date, slot, file: `${date}-${slot}.json`, summary
+    }, { retentionDays: RETENTION_DAYS, today: date });
+    writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
+    pruneDataDir(dataDir, { retentionDays: RETENTION_DAYS, today: date });
 
-  // 6. notify
-  await sendDM({
-    token: process.env.SLACK_BOT_TOKEN,
-    userId: process.env.NOTIFY_SLACK_USER_ID,
-    text: buildSummaryText({
-      date, slot, summary, projects,
-      dashboardUrl: process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app'
-    }),
-    dryRun
-  });
-
-  // 7. git push (dryRun이면 skip)
-  if (!dryRun) {
-    execSync(`git add data/ && git commit -m "data: ${date} ${slot} audit" && git push`, {
-      cwd: __dirname, stdio: 'inherit'
+    // 6. notify
+    await sendDM({
+      token: process.env.SLACK_BOT_TOKEN,
+      userId: process.env.NOTIFY_SLACK_USER_ID,
+      text: buildSummaryText({
+        date, slot, summary, projects,
+        dashboardUrl: process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app'
+      }),
+      dryRun
     });
+
+    // 7. git push (dryRun이면 skip)
+    if (!dryRun) {
+      try {
+        execSync(`git add data/ && git commit -m "data: ${date} ${slot} audit" && git push`, {
+          cwd: __dirname, stdio: 'inherit'
+        });
+      } catch (e) {
+        console.error('[audit] git push 실패 (로컬 JSON은 보존됨):', e?.message ?? String(e));
+      }
+    }
+  } finally {
+    await closeSession();
   }
 
-  await closeSession();
-  console.log('EXIT_CODE 0');
+  console.log('EXIT_CODE ' + (process.exitCode ?? 0));
 }
 
 async function safeRun(name, fn, errors, project) {
   try { return await fn(); }
   catch (e) {
-    if (e.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
-    errors.push({ projectId: project.projectId, check: name, error: e.message });
-    return { status: 'SKIP', evidence: { error: e.message }, message: `${name} 실행 중 예외` };
+    if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
+    const msg = e?.message ?? String(e);
+    errors.push({ projectId: project.projectId, check: name, error: msg });
+    return { status: 'SKIP', evidence: { error: msg }, message: `${name} 실행 중 예외: ${msg.slice(0, 100)}` };
   }
 }
 
@@ -151,6 +163,7 @@ function computeSummary(projects) {
 }
 
 async function buildContext({ dryRun }) {
+  // dryRun=true 시 headless=false로 디버깅 편의 (브라우저 가시화)
   const browserContext = await openSession({
     profileDir: process.env.CHROME_PROFILE_DIR || './chrome_profile',
     headless: !dryRun
@@ -172,8 +185,15 @@ async function buildContext({ dryRun }) {
     } finally { await page.close(); }
   };
 
-  const pmEmailsJson = JSON.parse(readFileSync(path.join(__dirname, 'config/pm_emails.json'), 'utf8'));
-  const pmEmails = Object.values(pmEmailsJson).map(v => v.email);
+  // pm_emails.json 안전 로드
+  let pmEmails;
+  try {
+    const pmEmailsJson = JSON.parse(readFileSync(path.join(__dirname, 'config/pm_emails.json'), 'utf8'));
+    pmEmails = Object.values(pmEmailsJson).map(v => v.email).filter(Boolean);
+    if (pmEmails.length === 0) throw new Error('pm_emails.json: email 없음');
+  } catch (e) {
+    throw new Error(`pm_emails.json 로드 실패: ${e?.message ?? String(e)}`);
+  }
 
   return {
     browserContext,
