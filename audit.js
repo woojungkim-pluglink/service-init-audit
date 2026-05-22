@@ -33,26 +33,41 @@ async function main() {
 
   console.log(`[audit] slot=${slot} date=${date} dryRun=${dryRun}`);
 
-  // 1. discover
-  const projects = await discoverProjects({
-    slot, date,
-    token: process.env.SLACK_BOT_TOKEN,
-    channelId: process.env.SLACK_CHANNEL_ID
-  });
-  console.log(`[discover] ${projects.length} projects found`);
+  // 1. discover — not_in_channel(봇 미초대) 등 운영 가능한 슬랙 에러는 0건으로 graceful
+  let projects;
+  try {
+    projects = await discoverProjects({
+      slot, date,
+      token: process.env.SLACK_BOT_TOKEN,
+      channelId: process.env.SLACK_CHANNEL_ID
+    });
+    console.log(`[discover] ${projects.length} projects found`);
+  } catch (e) {
+    const slackErr = /slack history failed: (.+)/.exec(e?.message ?? '')?.[1];
+    if (slackErr === 'not_in_channel' || slackErr === 'channel_not_found') {
+      console.warn(`[discover] ⚠️ ${slackErr} — 봇을 채널 ${process.env.SLACK_CHANNEL_ID}에 초대해야 메시지를 읽을 수 있습니다. 이번 슬롯은 0건으로 진행.`);
+      projects = [];
+    } else {
+      throw e;
+    }
+  }
 
   // 1.5 enrichment — initiatedAt은 임시로 슬롯 날짜 사용 (Task 14에서 플링커넥트 fetch로 교체)
   for (const p of projects) {
     p.initiatedAt = p.initiatedAt ?? date;
   }
 
-  // 2. session/context — try/finally로 close 보장
-  let ctx;
-  try {
-    ctx = await buildContext({ dryRun });
-  } catch (e) {
-    await closeSession();
-    throw e;
+  // 2. session/context — projects가 0건이면 비싼 세션 생성 skip
+  let ctx = null;
+  if (projects.length > 0) {
+    try {
+      ctx = await buildContext({ dryRun });
+    } catch (e) {
+      await closeSession();
+      throw e;
+    }
+  } else {
+    console.log('[audit] projects 0건 — Playwright 세션 생략');
   }
 
   try {
