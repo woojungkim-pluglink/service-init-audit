@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>서비스개시 검증 대시보드</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<aside id="sidebar">
+  <h1>📋 검증</h1>
+  <div id="last-updated"></div>
+  <ul id="date-list"></ul>
+</aside>
+<main id="main">
+  <div id="header"></div>
+  <div id="summary"></div>
+  <div id="filters">
+    <label><input type="checkbox" id="filter-fail-only"> FAIL/WARN만 보기</label>
+  </div>
+  <section id="slot-morning"></section>
+  <section id="slot-evening"></section>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
