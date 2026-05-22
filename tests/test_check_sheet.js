@@ -33,3 +33,18 @@ test('judgeSheet: SKIP — projectId 행 자체가 시트에 없음', () => {
   const r = judgeSheet(parseGvizCsv(csv), 'missing-id', '2026-05-22');
   assert.equal(r.status, 'SKIP');
 });
+
+test('parseGvizCsv: CRLF 응답도 정상 파싱 (라인 끝 \\r 제거)', () => {
+  const crlfCsv = '"행","프로젝트ID","BR(서비스개시일)"\r\n"2","abc-uuid","2026-05-22"\r\n';
+  const rows = parseGvizCsv(crlfCsv);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]['BR(서비스개시일)'], '2026-05-22');
+  assert.equal(rows[0]['프로젝트ID'], 'abc-uuid');
+});
+
+test('judgeSheet: CRLF 입력에서도 PASS 정상 판정', () => {
+  const crlfCsv = '"행","프로젝트ID","BR(서비스개시일)"\r\n"2","x","2026-05-22"\r\n';
+  const rows = parseGvizCsv(crlfCsv);
+  const r = judgeSheet(rows, 'x', '2026-05-22');
+  assert.equal(r.status, 'PASS');
+});
