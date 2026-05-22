@@ -1,0 +1,5 @@
+{
+  "buildCommand": "node scripts/copy_data_to_public.js",
+  "outputDirectory": "public",
+  "framework": null
+}
