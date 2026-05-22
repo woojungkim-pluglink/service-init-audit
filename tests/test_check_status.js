@@ -30,3 +30,11 @@ test('judgeStatus: SKIP — 빈 입력', () => {
   const r = judgeStatus([]);
   assert.equal(r.status, 'SKIP');
 });
+
+test('judgeStatus: SKIP — null 입력', () => {
+  assert.equal(judgeStatus(null).status, 'SKIP');
+});
+
+test('judgeStatus: SKIP — undefined 입력', () => {
+  assert.equal(judgeStatus(undefined).status, 'SKIP');
+});
