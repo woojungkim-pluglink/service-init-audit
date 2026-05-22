@@ -2,6 +2,7 @@
   "threads": [
     {
       "id": "t1",
+      "threadId": "tt1",
       "subject": "[플러그링크] OO아파트 충전기 설치 안내",
       "from": "daeyeol.yang@pluglink.kr",
       "to": ["관리사무소@ooapt.com"],
@@ -11,6 +12,7 @@
     },
     {
       "id": "t2",
+      "threadId": "tt2",
       "subject": "ZZ아파트 견적 문의",
       "from": "daeyeol.yang@pluglink.kr",
       "to": ["zzapt@xxx.com"],

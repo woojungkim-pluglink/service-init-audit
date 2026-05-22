@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchEmails } from '../lib/check_doc.js';
+import { matchEmails, subtractDays } from '../lib/check_doc.js';
 import { readFileSync } from 'node:fs';
 
 const { threads } = JSON.parse(readFileSync(new URL('./fixtures/gmail_threads.json', import.meta.url)));
@@ -33,4 +33,18 @@ test('matchEmails: FAIL — 매칭 메일 없음', () => {
     myEmail: 'woojung.kim@pluglink.kr'
   });
   assert.equal(r.status, 'FAIL');
+});
+
+test('matchEmails: PASS 시 gmailUrl이 threadId 사용', () => {
+  const r = matchEmails(threads, {
+    keywords: ['OO아파트'],
+    pmEmails,
+    myEmail: 'woojung.kim@pluglink.kr'
+  });
+  assert.equal(r.status, 'PASS');
+  assert.match(r.evidence.matchedEmails[0].gmailUrl, /#inbox\/tt1$/);
+});
+
+test('subtractDays: 30일 빼기', () => {
+  assert.equal(subtractDays('2026-05-22', 30), '2026-04-22');
 });
