@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "ts": "1779404445.913559",
+      "type": "message",
+      "text": "[서비스개시] OO아파트 지하주차장\n충전소: <https://connect.pluglink.kr/stations/12345|OO아파트>\n프로젝트: <https://connect.pluglink.kr/projects/abc-uuid|OO아파트 프로젝트>\n충전기 4대"
+    },
+    {
+      "ts": "1779404500.000000",
+      "type": "message",
+      "text": "[서비스개시] XX빌라\n충전소: https://connect.pluglink.kr/stations/67890\n프로젝트: https://connect.pluglink.kr/projects/def-uuid\n충전기 2대"
+    },
+    {
+      "ts": "1779404600.000000",
+      "type": "message",
+      "subtype": "channel_join",
+      "text": "user joined the channel"
+    }
+  ]
+}
