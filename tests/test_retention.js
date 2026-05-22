@@ -16,3 +16,8 @@ test('pruneDataDir: 90일 초과 파일 삭제', () => {
   assert.deepEqual(left, ['2026-05-22-morning.json', 'index.json']);
   rmSync(dir, { recursive: true });
 });
+
+test('pruneDataDir: dir 존재 안 하면 빈 배열 반환', () => {
+  const result = pruneDataDir('/nonexistent/path/that/doesnt/exist', { today: '2026-05-22' });
+  assert.deepEqual(result, []);
+});
