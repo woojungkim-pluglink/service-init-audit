@@ -44,3 +44,15 @@ test('judgeRate: FAIL — 충전기 차집합 발생', () => {
   assert.equal(r.status, 'FAIL');
   assert.deepEqual(r.evidence.diff.sort(), ['DEV002', 'DEV003']);
 });
+
+test('judgeRate: 특가 + 합의서 + diff — diff 우선이 아닌 합의서가 OK이므로 diff FAIL 반환', () => {
+  const r = judgeRate({
+    contractRateName: '특가-A',
+    hasSpecialAgreementFile: true,
+    appliedChargers: ['DEV001'],
+    projectChargers: ['DEV001', 'DEV002']
+  });
+  assert.equal(r.status, 'FAIL');
+  assert.match(r.message, /불일치/);
+  assert.deepEqual(r.evidence.diff, ['DEV002']);
+});
