@@ -18,6 +18,7 @@
  */
 import dotenv from 'dotenv';
 import path from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { google } from 'googleapis';
 
