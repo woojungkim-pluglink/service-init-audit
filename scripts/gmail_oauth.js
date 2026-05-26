@@ -92,8 +92,21 @@ const server = http.createServer(async (req, res) => {
       process.exit(1);
     }
 
+    // .env 자동 patch
+    const envPath = path.join(__dirname, '..', 'config', '.env');
+    if (existsSync(envPath)) {
+      let body = readFileSync(envPath, 'utf8');
+      if (/^GMAIL_REFRESH_TOKEN=/m.test(body)) {
+        body = body.replace(/^GMAIL_REFRESH_TOKEN=.*$/m, `GMAIL_REFRESH_TOKEN=${tokens.refresh_token}`);
+      } else {
+        body += `\nGMAIL_REFRESH_TOKEN=${tokens.refresh_token}\n`;
+      }
+      writeFileSync(envPath, body);
+      console.log('\n✅ config/.env 의 GMAIL_REFRESH_TOKEN 자동 갱신');
+    }
+
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-       .end('<h1>✅ 성공</h1><p>이 창을 닫고 터미널을 확인하세요.</p>');
+       .end('<h1>✅ 성공</h1><p>refresh_token이 .env에 자동 저장되었습니다. 이 창을 닫으세요.</p>');
 
     console.log('\n────────────────────────────────────────────────');
     console.log(' ✅ refresh_token 획득 성공');
