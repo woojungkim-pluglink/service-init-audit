@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "ts": "1779404445.913559",
+      "type": "message",
+      "user": "U07NWJ8652B",
+      "text": ":spiral_calendar_pad: *2026-05-22 서비스 개시 (00:00 ~ 08:00)* \n\n:플러그링크: 총 11개소 충전소, 59기 충전기 현황입니다. \n\n    - *<https://connect.pluglink.kr/operation/stations/10020322/home|세원한아름아파트(10020322)>* - 총 6기 (운영: 5기, 미운영: 1기)\n    - *<https://connect.pluglink.kr/operation/stations/10032049/home|경기 성남 중원구 두산위브아파트(10032049)>* - 총 10기 (운영: 10기, 미운영: 0기)\n    - *<https://connect.pluglink.kr/operation/stations/10032208/home|경북 구미 금오산어울림2단지(10032208)>* - 총 4기 (운영: 4기, 미운영: 0기)\n\n:warning: 미운영 충전기들을 확인해주세요."
+    },
+    {
+      "ts": "1779400000.000000",
+      "type": "message",
+      "subtype": "channel_join",
+      "text": "user joined the channel"
+    }
+  ]
+}

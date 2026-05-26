@@ -83,7 +83,7 @@ function renderBody() {
 function renderSummary() {
   const both = ['morning', 'evening'].map(s => state.slotData[s]).filter(Boolean);
   const totals = both.reduce((acc, d) => {
-    acc.totalProjects += d.summary.totalProjects;
+    acc.totalStations += (d.summary.totalStations ?? d.summary.totalProjects ?? 0);
     for (const k of ['PASS', 'WARN', 'FAIL', 'SKIP']) acc.byOverall[k] += d.summary.byOverall[k] || 0;
     for (const ck of ['doc', 'rate', 'status', 'sheet']) {
       acc.byCheck[ck] = acc.byCheck[ck] || { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
@@ -92,12 +92,12 @@ function renderSummary() {
       }
     }
     return acc;
-  }, { totalProjects: 0, byOverall: { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 }, byCheck: {} });
+  }, { totalStations: 0, byOverall: { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 }, byCheck: {} });
 
   const checkLabels = { doc: '공문', rate: '요금제', status: '상태', sheet: '시트' };
   document.getElementById('summary').innerHTML = `
-    총 ${totals.totalProjects}건 · PASS ${totals.byOverall.PASS} · WARN ${totals.byOverall.WARN} · FAIL ${totals.byOverall.FAIL}
-    <br>${Object.keys(checkLabels).map(k => `${checkLabels[k]} ${totals.byCheck[k]?.PASS || 0}/${totals.totalProjects}`).join(' · ')}
+    총 ${totals.totalStations}건 · PASS ${totals.byOverall.PASS} · WARN ${totals.byOverall.WARN} · FAIL ${totals.byOverall.FAIL}
+    <br>${Object.keys(checkLabels).map(k => `${checkLabels[k]} ${totals.byCheck[k]?.PASS || 0}/${totals.totalStations}`).join(' · ')}
   `;
 }
 
@@ -105,27 +105,32 @@ function renderSlot(slot, title) {
   const el = document.getElementById('slot-' + slot);
   const data = state.slotData[slot];
   if (!data) { el.innerHTML = `<div class="slot-title">${title} — 데이터 없음</div>`; return; }
-  let projects = data.projects;
-  if (state.filterFailOnly) projects = projects.filter(p => p.overall === 'FAIL' || p.overall === 'WARN');
+  let stations = data.stations ?? data.projects ?? []; // 구버전 호환
+  if (state.filterFailOnly) stations = stations.filter(s => s.overall === 'FAIL' || s.overall === 'WARN');
 
-  el.innerHTML = `<div class="slot-title">${title} (${projects.length}건)</div>` +
-    projects.map(renderCard).join('');
+  el.innerHTML = `<div class="slot-title">${title} (${stations.length}건)</div>` +
+    stations.map(renderCard).join('');
   for (const c of el.querySelectorAll('.card')) {
     c.addEventListener('click', () => c.classList.toggle('expanded'));
   }
 }
 
-function renderCard(p) {
+function renderCard(s) {
   const labels = { doc: '📭 공문', rate: '💰 요금제', status: '⚙️ 상태', sheet: '📊 시트' };
-  const checks = Object.entries(p.checks).map(([k, c]) =>
+  const checks = Object.entries(s.checks || {}).map(([k, c]) =>
     `<span class="${c.status.toLowerCase()}">${labels[k]} ${c.status}</span>`
   ).join('');
+  const name = s.stationName ?? s.projectName ?? s.stationId ?? '(no name)';
+  const total = s.totalChargers ?? s.chargerCount ?? '?';
+  const newCount = (s.newChargers || []).length;
+  const addr = s.address ? ` · ${escapeHtml(s.address)}` : '';
   return `
-    <div class="card ${p.overall.toLowerCase()}">
-      <div><b>[${p.overall}]</b> ${escapeHtml(p.projectName)} · 서비스개시일 ${escapeHtml(p.initiatedAt)} · 충전기 ${escapeHtml(String(p.chargerCount))}대</div>
+    <div class="card ${(s.overall || 'skip').toLowerCase()}">
+      <div><b>[${s.overall ?? 'SKIP'}]</b> ${escapeHtml(name)}${addr}</div>
+      <div class="meta">총 ${escapeHtml(String(total))}기 · 신규 ${newCount}기 · 개시일 ${escapeHtml(s.initiatedAt ?? '?')}</div>
       <div class="checks">${checks}</div>
       <div class="evidence">
-        ${Object.entries(p.checks).map(([k, c]) =>
+        ${Object.entries(s.checks || {}).map(([k, c]) =>
           `<div><b>${labels[k]}</b>: ${escapeHtml(c.message || '')}</div>`
         ).join('')}
       </div>

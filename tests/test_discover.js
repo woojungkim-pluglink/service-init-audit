@@ -1,52 +1,56 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSlackMessages, extractMetadata } from '../lib/discover.js';
 import { readFileSync } from 'node:fs';
+import { parseSlackMessage, parseSlackMessages } from '../lib/discover.js';
 
-const fixture = JSON.parse(readFileSync(new URL('./fixtures/slack_messages.json', import.meta.url)));
+const fixture = JSON.parse(readFileSync(new URL('./fixtures/slack_morning_message.json', import.meta.url)));
 
-test('parseSlackMessages: 마크다운 링크 형식에서 stationId/projectId 추출', () => {
-  const result = parseSlackMessages(fixture.messages);
-  assert.equal(result.length, 2);
-  assert.equal(result[0].stationId, '12345');
-  assert.equal(result[0].projectId, 'abc-uuid');
-  assert.equal(result[0].ts, '1779404445.913559');
-  assert.match(result[0].permalink, /p1779404445913559$/);
+test('parseSlackMessage: 1 메시지 → 여러 충전소 추출', () => {
+  const stations = parseSlackMessage(fixture.messages[0]);
+  assert.equal(stations.length, 3);
 });
 
-test('parseSlackMessages: 평문 URL 형식에서도 추출', () => {
-  const result = parseSlackMessages(fixture.messages);
-  assert.equal(result[1].stationId, '67890');
-  assert.equal(result[1].projectId, 'def-uuid');
+test('parseSlackMessage: stationId/stationName 정확', () => {
+  const stations = parseSlackMessage(fixture.messages[0]);
+  assert.equal(stations[0].stationId, '10020322');
+  assert.equal(stations[0].stationName, '세원한아름아파트');
+  assert.equal(stations[1].stationId, '10032049');
+  assert.equal(stations[1].stationName, '경기 성남 중원구 두산위브아파트');
 });
 
-test('parseSlackMessages: subtype 있는 메시지(채널 입장 등) 제외', () => {
-  const result = parseSlackMessages(fixture.messages);
-  assert.equal(result.find(r => r.ts === '1779404600.000000'), undefined);
+test('parseSlackMessage: 충전기 수 (운영/미운영) 정확', () => {
+  const stations = parseSlackMessage(fixture.messages[0]);
+  assert.equal(stations[0].totalChargers, 6);
+  assert.equal(stations[0].activeChargers, 5);
+  assert.equal(stations[0].inactiveChargers, 1);
+  assert.equal(stations[1].totalChargers, 10);
+  assert.equal(stations[1].activeChargers, 10);
+  assert.equal(stations[1].inactiveChargers, 0);
 });
 
-test('parseSlackMessages: 충전소 링크 없는 메시지는 제외', () => {
-  const noLink = [{ ts: '1.0', type: 'message', text: '점심 어디서 먹지' }];
-  assert.equal(parseSlackMessages(noLink).length, 0);
+test('parseSlackMessage: 헤더 날짜와 시간 윈도우 파싱', () => {
+  const stations = parseSlackMessage(fixture.messages[0]);
+  assert.equal(stations[0].headerDate, '2026-05-22');
+  assert.equal(stations[0].headerWindow, '00:00 ~ 08:00');
 });
 
-test('parseSlackMessages: stationName/projectName/chargerCount 추출 (마크다운)', () => {
-  const result = parseSlackMessages(fixture.messages);
-  assert.equal(result[0].stationName, 'OO아파트');
-  assert.equal(result[0].projectName, 'OO아파트 프로젝트');
-  assert.equal(result[0].chargerCount, 4);
+test('parseSlackMessage: permalink 정확', () => {
+  const stations = parseSlackMessage(fixture.messages[0]);
+  assert.match(stations[0].permalink, /p1779404445913559$/);
+  assert.equal(stations[0].ts, '1779404445.913559');
 });
 
-test('parseSlackMessages: 평문 URL 메시지에서도 stationName 폴백 (헤더 라인)', () => {
-  const result = parseSlackMessages(fixture.messages);
-  // 두 번째 메시지: 충전소 라인이 평문 URL이라 link label 없음 → 헤더 '[서비스개시] XX빌라' 사용
-  assert.equal(result[1].stationName, 'XX빌라');
-  // projectName도 link label 없으면 stationName 폴백
-  assert.equal(result[1].projectName, 'XX빌라');
-  assert.equal(result[1].chargerCount, 2);
+test('parseSlackMessage: subtype 메시지는 빈 배열', () => {
+  const result = parseSlackMessage(fixture.messages[1]);
+  assert.deepEqual(result, []);
 });
 
-test('extractMetadata: chargerCount 없으면 null', () => {
-  const meta = extractMetadata('[서비스개시] ZZ아파트\n충전소: url\n프로젝트: url');
-  assert.equal(meta.chargerCount, null);
+test('parseSlackMessage: 충전소 라인 없는 메시지는 빈 배열', () => {
+  const result = parseSlackMessage({ ts: '1.0', type: 'message', text: '점심 어디서 먹지' });
+  assert.deepEqual(result, []);
+});
+
+test('parseSlackMessages: 여러 메시지 통합', () => {
+  const all = parseSlackMessages(fixture.messages);
+  assert.equal(all.length, 3); // subtype 메시지 제외
 });

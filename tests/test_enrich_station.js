@@ -1,0 +1,49 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { extractStationMeta, isChargerNormal, filterNewChargers } from '../lib/enrich_station.js';
+
+const text = readFileSync(new URL('./fixtures/station_page_text.txt', import.meta.url), 'utf8');
+
+test('extractStationMeta: stationId 정확', () => {
+  const m = extractStationMeta(text);
+  assert.equal(m.stationId, '10020322');
+});
+
+test('extractStationMeta: projectIds 콤마 구분 다중', () => {
+  const m = extractStationMeta(text);
+  assert.deepEqual(m.projectIds, ['26404', '22677']);
+});
+
+test('extractStationMeta: address 한국 주소', () => {
+  const m = extractStationMeta(text);
+  assert.match(m.address, /충북.*충주시.*금릉로.*101/);
+});
+
+test('extractStationMeta: stationName 추출', () => {
+  const m = extractStationMeta(text);
+  assert.equal(m.stationName, '세원한아름아파트');
+});
+
+test('isChargerNormal: 3조건 AND', () => {
+  assert.equal(isChargerNormal({
+    operationStatus: '사업개시', deviceStatus: '운영', connectorStatus: '사용가능'
+  }), true);
+  assert.equal(isChargerNormal({
+    operationStatus: '사업개시', deviceStatus: '운영', connectorStatus: '점검중'
+  }), false);
+  assert.equal(isChargerNormal({
+    operationStatus: '미개시', deviceStatus: '운영', connectorStatus: '사용가능'
+  }), false);
+});
+
+test('filterNewChargers: today 매칭만 남김', () => {
+  const chargers = [
+    { chargerId: '16740', initiatedAt: '2025-01-31' },
+    { chargerId: '54251', initiatedAt: '2026-05-22' },
+    { chargerId: '54252', initiatedAt: '2026-05-22' }
+  ];
+  const out = filterNewChargers(chargers, '2026-05-22');
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map(c => c.chargerId), ['54251', '54252']);
+});
