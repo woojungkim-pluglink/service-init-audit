@@ -76,8 +76,13 @@ async function main() {
           const page = await ctx.browserContext.newPage();
           try {
             const data = await fetchStationData(page, s.stationId, PLINKCONNECT_BASE);
-            Object.assign(s, data);
-            s.newChargers = filterNewChargers(data.chargers, date);
+            // enrich에서 못 잡은 필드는 슬랙 원본 보존
+            s.stationName = data.stationName ?? s.stationName;
+            s.address = data.address ?? null;
+            s.projectIds = data.projectIds ?? [];
+            s.chargers = data.chargers ?? [];
+            // stationId는 슬랙이 ground-truth (URL에서 추출) — 덮어쓰지 않음
+            s.newChargers = filterNewChargers(s.chargers, date);
             s.initiatedAt = s.headerDate ?? date;
           } finally { await page.close(); }
         } catch (e) {
@@ -252,12 +257,17 @@ async function buildContext({ dryRun }) {
     throw new Error(`pm_emails.json 로드 실패: ${e?.message ?? String(e)}`);
   }
 
+  // 그룹 메일 — cc 인정 대상 (.env의 PM_GROUP_EMAILS=pm@pluglink.kr,team@pluglink.kr 등)
+  const groupEmails = (process.env.PM_GROUP_EMAILS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
   return {
     browserContext,
     plinkconnectBase: PLINKCONNECT_BASE,
     gmail: oauth2Client,
     pmEmails,
     myEmail: process.env.GMAIL_USER || 'woojung.kim@pluglink.kr',
+    groupEmails,
     fetchSheetCsv
   };
 }
