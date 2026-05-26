@@ -1,0 +1,45 @@
+{
+  "lastUpdated": "2026-05-26T03:59:05.961Z",
+  "slots": [
+    {
+      "date": "2026-05-22",
+      "slot": "morning",
+      "file": "2026-05-22-morning.json",
+      "summary": {
+        "totalStations": 11,
+        "byOverall": {
+          "PASS": 0,
+          "WARN": 0,
+          "FAIL": 11,
+          "SKIP": 0
+        },
+        "byCheck": {
+          "doc": {
+            "PASS": 0,
+            "WARN": 0,
+            "FAIL": 11,
+            "SKIP": 0
+          },
+          "rate": {
+            "PASS": 0,
+            "WARN": 0,
+            "FAIL": 0,
+            "SKIP": 11
+          },
+          "status": {
+            "PASS": 10,
+            "WARN": 1,
+            "FAIL": 0,
+            "SKIP": 0
+          },
+          "sheet": {
+            "PASS": 0,
+            "WARN": 0,
+            "FAIL": 0,
+            "SKIP": 11
+          }
+        }
+      }
+    }
+  ]
+}
