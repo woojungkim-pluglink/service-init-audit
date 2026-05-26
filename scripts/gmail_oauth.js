@@ -29,8 +29,7 @@ import { exec } from 'node:child_process';
 const PORT = 8080;
 const REDIRECT_URI = `http://localhost:${PORT}/callback`;
 const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.metadata'
+  'https://www.googleapis.com/auth/gmail.readonly'  // q search 가능
 ];
 
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID;
