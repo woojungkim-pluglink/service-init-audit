@@ -48,3 +48,42 @@ test('matchEmails: PASS 시 gmailUrl이 threadId 사용', () => {
 test('subtractDays: 30일 빼기', () => {
   assert.equal(subtractDays('2026-05-22', 30), '2026-04-22');
 });
+
+test('matchEmails: PASS — To에 그룹 메일 (display name 형식)', () => {
+  const threadsWithGroup = [{
+    id: 'g1', threadId: 'gg1',
+    subject: '[플러그링크] 주은아파트 서비스개시 안내',
+    from: '"양대열 매니저(사업개발팀)" <daeyeol.yang@pluglink.kr>',
+    to: ['관리실@xxx.com', '"PM팀" <pm@pluglink.kr>', '"플러그링크ONM" <OnM@pluglink.kr>'],
+    cc: [],
+    date: '2026-05-27T10:00:00+09:00',
+    snippet: '주은아파트 충전기 서비스개시 안내드립니다'
+  }];
+  const r = matchEmails(threadsWithGroup, {
+    keywords: ['주은아파트'],
+    pmEmails,
+    myEmail: 'woojung.kim@pluglink.kr',
+    groupEmails: ['pm@pluglink.kr']
+  });
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.matchedEmails.length, 1);
+});
+
+test('matchEmails: WARN — 그룹 메일 없고 본인도 없음 (키워드만 매칭)', () => {
+  const threadsNoGroup = [{
+    id: 'n1', threadId: 'nn1',
+    subject: '[플러그링크] 외부아파트 안내',
+    from: 'daeyeol.yang@pluglink.kr',
+    to: ['someone@external.com'],
+    cc: [],
+    date: '2026-05-27T10:00:00+09:00',
+    snippet: '외부아파트 안내'
+  }];
+  const r = matchEmails(threadsNoGroup, {
+    keywords: ['외부아파트'],
+    pmEmails,
+    myEmail: 'woojung.kim@pluglink.kr',
+    groupEmails: ['pm@pluglink.kr']
+  });
+  assert.equal(r.status, 'WARN');
+});

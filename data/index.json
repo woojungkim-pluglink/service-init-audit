@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-05-26T05:59:05.715Z",
+  "lastUpdated": "2026-05-27T23:23:32.201Z",
   "slots": [
     {
       "date": "2026-05-22",
@@ -9,15 +9,15 @@
         "totalStations": 11,
         "byOverall": {
           "PASS": 0,
-          "WARN": 0,
-          "FAIL": 11,
+          "WARN": 4,
+          "FAIL": 7,
           "SKIP": 0
         },
         "byCheck": {
           "doc": {
             "PASS": 0,
-            "WARN": 0,
-            "FAIL": 11,
+            "WARN": 6,
+            "FAIL": 5,
             "SKIP": 0
           },
           "rate": {
@@ -37,6 +37,46 @@
             "WARN": 0,
             "FAIL": 2,
             "SKIP": 3
+          }
+        }
+      }
+    },
+    {
+      "date": "2026-05-28",
+      "slot": "morning",
+      "file": "2026-05-28-morning.json",
+      "summary": {
+        "totalStations": 5,
+        "byOverall": {
+          "PASS": 0,
+          "WARN": 4,
+          "FAIL": 1,
+          "SKIP": 0
+        },
+        "byCheck": {
+          "doc": {
+            "PASS": 0,
+            "WARN": 4,
+            "FAIL": 1,
+            "SKIP": 0
+          },
+          "rate": {
+            "PASS": 0,
+            "WARN": 0,
+            "FAIL": 0,
+            "SKIP": 5
+          },
+          "status": {
+            "PASS": 4,
+            "WARN": 1,
+            "FAIL": 0,
+            "SKIP": 0
+          },
+          "sheet": {
+            "PASS": 3,
+            "WARN": 0,
+            "FAIL": 1,
+            "SKIP": 1
           }
         }
       }
