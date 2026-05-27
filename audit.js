@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 
 import { discoverStations } from './lib/discover.js';
 import { openSession, closeSession } from './lib/playwright_session.js';
+import { ensureSession } from './lib/plinkconnect_auth.js';
 import { fetchStationData, filterNewChargers } from './lib/enrich_station.js';
 import { checkDoc } from './lib/check_doc.js';
 import { checkRate } from './lib/check_rate.js';
@@ -68,8 +69,30 @@ async function main() {
   }
 
   try {
-    // 3. enrich — 각 충전소 페이지 fetch (주소, projectIds, 충전기 리스트, 신규 충전기)
     const errors = [];
+
+    // 2.5 세션 보장 — 만료 시 자동 로그인
+    if (ctx) {
+      try {
+        await ensureSession(ctx.browserContext, {
+          base: PLINKCONNECT_BASE,
+          username: process.env.PLINKCONNECT_USERNAME,
+          password: process.env.PLINKCONNECT_PASSWORD
+        });
+      } catch (e) {
+        // 자동 로그인 실패 시 Slack 통지 후 종료
+        await sendDM({
+          token: process.env.SLACK_BOT_TOKEN,
+          userId: process.env.NOTIFY_SLACK_USER_ID,
+          text: `[audit] 플링커넥트 자동 로그인 실패: ${e?.message ?? e}. 자격증명 확인 필요.`,
+          dryRun
+        });
+        process.exitCode = 2;
+        return;
+      }
+    }
+
+    // 3. enrich — 각 충전소 페이지 fetch (주소, projectIds, 충전기 리스트, 신규 충전기)
     if (ctx) {
       for (const s of stations) {
         try {
