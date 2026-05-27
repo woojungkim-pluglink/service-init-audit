@@ -6,3 +6,4 @@ data/*.json
 config/.env
 .vercel/
 tmp_login_inspect/
+tmp_autologin_test/
