@@ -204,12 +204,13 @@ async function safeRun(name, fn, errors, station) {
 }
 
 function computeOverall(checks) {
-  const order = ['PASS', 'SKIP', 'WARN', 'FAIL'];
-  let worst = 'PASS';
-  for (const c of Object.values(checks)) {
-    if (order.indexOf(c.status) > order.indexOf(worst)) worst = c.status;
-  }
-  return worst;
+  // SKIP은 "정보 부족"으로 취급 — PASS/FAIL 판정에 영향 없음.
+  // FAIL 하나라도 → FAIL, WARN 하나라도 → WARN, PASS 하나라도 → PASS, 전부 SKIP → SKIP
+  const statuses = Object.values(checks).map(c => c.status);
+  if (statuses.includes('FAIL')) return 'FAIL';
+  if (statuses.includes('WARN')) return 'WARN';
+  if (statuses.includes('PASS')) return 'PASS';
+  return 'SKIP';
 }
 
 function computeSummary(stations) {
