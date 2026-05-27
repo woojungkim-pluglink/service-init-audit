@@ -5,3 +5,4 @@ data/*.json
 !data/index.json
 config/.env
 .vercel/
+tmp_login_inspect/
