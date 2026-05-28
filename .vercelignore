@@ -1,0 +1,11 @@
+# Vercel 배포 시 업로드 제외 (chrome_profile은 Playwright가 잠그고 있어 EBUSY 유발)
+chrome_profile/
+node_modules/
+logs/
+.git/
+.auth_token
+config/.env
+tmp_*/
+scripts/inspect_output/
+docs/
+tests/
