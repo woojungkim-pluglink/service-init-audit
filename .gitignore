@@ -1,8 +1,7 @@
 node_modules/
 chrome_profile/
 logs/
-data/*.json
-!data/index.json
+public/data/
 config/.env
 .vercel/
 tmp_login_inspect/

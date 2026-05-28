@@ -29,7 +29,8 @@ async function main() {
   if (!['morning', 'evening'].includes(slot)) throw new Error('--slot must be morning|evening');
   const date = args.date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
   const dryRun = args['dry-run'] === true;
-  const dataDir = path.join(__dirname, 'data');
+  // Vercel outputDirectory=public 이 /data/* 를 그대로 서빙하도록 public/data 에 직접 기록
+  const dataDir = path.join(__dirname, 'public', 'data');
   const logsDir = path.join(__dirname, 'logs');
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(logsDir, { recursive: true });
@@ -185,14 +186,14 @@ async function main() {
       dryRun
     });
 
-    // 8. git push (dryRun이면 skip)
+    // 8. Vercel 배포 (dryRun이면 skip). public/data 가 정적 서빙됨.
     if (!dryRun) {
       try {
-        execSync(`git add data/ && git commit -m "data: ${date} ${slot} audit" && git push`, {
+        execSync(`npx vercel deploy --prod --yes`, {
           cwd: __dirname, stdio: 'inherit'
         });
       } catch (e) {
-        console.error('[audit] git push 실패 (로컬 JSON은 보존됨):', e?.message ?? String(e));
+        console.error('[audit] Vercel 배포 실패 (로컬 JSON은 보존됨):', e?.message ?? String(e));
       }
     }
   } finally {
