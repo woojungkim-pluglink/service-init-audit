@@ -132,10 +132,12 @@ async function main() {
     for (const s of stations) {
       try {
         s.checks = {};
+        // sheet 먼저 — 매칭 행의 projectName(E열)을 station에 채워 doc 키워드로 활용
+        s.checks.sheet  = await safeRun('sheet',  () => checkSheet(s, ctx),  errors, s);
+        s.projectName = s.checks.sheet.evidence?.projectName ?? null;
         s.checks.doc    = await safeRun('doc',    () => checkDoc(s, ctx),    errors, s);
         s.checks.rate   = await safeRun('rate',   () => checkRate(s, ctx),   errors, s);
         s.checks.status = await safeRun('status', () => checkStatus(s, ctx), errors, s);
-        s.checks.sheet  = await safeRun('sheet',  () => checkSheet(s, ctx),  errors, s);
         s.overall = computeOverall(s.checks);
       } catch (e) {
         if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') {
