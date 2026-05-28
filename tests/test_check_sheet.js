@@ -99,3 +99,14 @@ test('judgeSheet: 같은 주소 2행 — projectId 미일치 시 BR==today 행 �
   assert.equal(r.status, 'PASS');
   assert.equal(r.evidence.brValue, '2026-05-28');
 });
+
+test('judgeSheet: projectId가 과거+현재 둘 다 매칭 — BR==today 행 우선 (현대2차 케이스)', () => {
+  const rows = [
+    mkRowP('3451', '서울 마포구 새창로8길 72', '2022-12-21'),  // 예전
+    mkRowP('27294', '서울 마포구 새창로8길 72', '2026-05-28')  // 오늘 개시
+  ];
+  // 충전소 projectIds에 둘 다 있음 → projectId 매칭 후보 2개 중 BR==today 행 선택
+  const r = judgeSheet(rows, '서울 마포구 새창로8길 72', '2026-05-28', ['27294', '3451']);
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.sheetProjectId, '27294');
+});
