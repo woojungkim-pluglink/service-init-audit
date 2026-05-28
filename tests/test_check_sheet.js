@@ -68,6 +68,30 @@ test('parseGvizCsv: CRLF 응답 처리', () => {
   assert.deepEqual(rows[0], ['a', 'b']);
 });
 
+test('judgeSheet: 시도 약자/풀네임 매칭 (세종특별자치시 ↔ 세종)', () => {
+  // 시트 F열은 "세종 부강면 ...", 플링커넥트는 "세종특별자치시 부강면 ..."
+  const c = new Array(70).fill('');
+  c[0] = 'https://connect.pluglink.kr/manage/projects/26702/construction';
+  c[5] = '세종 부강면 부강3길 29-11';
+  c[69] = '2026-05-28';
+  const r = judgeSheet([c], '세종특별자치시 부강면 부강3길 29-11', '2026-05-28', ['26702']);
+  assert.equal(r.status, 'PASS');
+});
+
+test('judgeSheet: 시도 약자 — 충북/충남/전북 등', () => {
+  const mk = (full) => {
+    const c = new Array(70).fill('');
+    c[5] = full + ' 어딘가로 1';
+    c[69] = '2026-05-28';
+    return c;
+  };
+  const rows = [mk('충북'), mk('충남'), mk('전북')];
+  // 풀네임으로 쿼리해도 매칭
+  assert.equal(judgeSheet(rows, '충청북도 어딘가로 1', '2026-05-28').status, 'PASS');
+  assert.equal(judgeSheet(rows, '충청남도 어딘가로 1', '2026-05-28').status, 'PASS');
+  assert.equal(judgeSheet(rows, '전라북도 어딘가로 1', '2026-05-28').status, 'PASS');
+});
+
 // A열(인덱스 0)=프로젝트 URL, F열(5)=주소, BR열(69)=서비스개시일
 function mkRowP(projectId, addr, br) {
   const cells = new Array(70).fill('');
