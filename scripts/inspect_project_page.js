@@ -1,13 +1,12 @@
 /**
- * 프로젝트 페이지(계약탭 포함)를 캡처해 요금제 Phase 2 셀렉터 분석.
+ * 프로젝트 construction 페이지에서 stationId 추출 로직 분석.
  *
  * 실행:
- *   node scripts/inspect_project_page.js 26404
+ *   node scripts/inspect_project_page.js 25837
  *
  * 출력:
- *   scripts/inspect_output/project_<id>.html
- *   scripts/inspect_output/project_<id>.png
- *   + 탭/버튼 텍스트 목록 콘솔 출력
+ *   - 페이지 URL + stationId 후보(있으면)
+ *   - HTML + 스크린샷 저장
  */
 import { openSession, closeSession } from '../lib/playwright_session.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -24,21 +23,32 @@ mkdirSync(OUT, { recursive: true });
 
 const ctx = await openSession({ profileDir: './chrome_profile', headless: true });
 const page = await ctx.newPage();
-await page.goto(`https://connect.pluglink.kr/manage/projects/${projectId}`, {
-  waitUntil: 'domcontentloaded', timeout: 30000
-});
+
+// 시트 A열 URL 형식과 동일하게 /construction
+const url = `https://connect.pluglink.kr/manage/projects/${projectId}/construction`;
+await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 await page.waitForTimeout(3000);
 console.log('현재 URL:', page.url());
 
-// 탭/버튼 텍스트 후보 (계약탭 찾기용)
-const tabs = await page.$$eval('[role="tab"], button, a, [class*="tab"]',
-  els => [...new Set(els.map(e => (e.textContent || '').trim()).filter(t => t && t.length <= 20))]
-).catch(() => []);
-console.log('탭/버튼 후보:', JSON.stringify(tabs.slice(0, 50), null, 0));
+// stationId 후보: /operation/stations/{id} 형식 링크
+const stationIds = await page.$$eval(
+  'a',
+  els => [...new Set(
+    els.map(e => e.href)
+      .map(h => (h.match(/\/operation\/stations\/(\d+)/) || [])[1])
+      .filter(Boolean)
+  )]
+);
+console.log('발견된 stationId 후보:', JSON.stringify(stationIds));
 
-writeFileSync(path.join(OUT, `project_${projectId}.html`), await page.content(), 'utf8');
-await page.screenshot({ path: path.join(OUT, `project_${projectId}.png`), fullPage: true });
-console.log('저장:', `scripts/inspect_output/project_${projectId}.{html,png}`);
+// 페이지 텍스트 일부 (계약 정보, 충전소 정보 위치 파악용)
+const text = await page.evaluate(() => document.body.innerText);
+console.log('=== 텍스트 (앞 2000자) ===');
+console.log(text.slice(0, 2000));
+
+writeFileSync(path.join(OUT, `project_${projectId}_construction.html`), await page.content(), 'utf8');
+await page.screenshot({ path: path.join(OUT, `project_${projectId}_construction.png`), fullPage: true });
+console.log('저장: scripts/inspect_output/project_' + projectId + '_construction.{html,png}');
 
 await closeSession();
 console.log('done.');
