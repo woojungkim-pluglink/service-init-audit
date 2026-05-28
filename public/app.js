@@ -78,6 +78,51 @@ function renderBody() {
   renderSummary();
   renderSlot('morning', '아침(8AM 알림)');
   renderSlot('evening', '저녁(5PM 알림)');
+  renderTomorrow();
+}
+
+function renderTomorrow() {
+  const el = document.getElementById('slot-tomorrow');
+  const evening = state.slotData.evening;
+  const tomorrowStations = evening?.tomorrowStations || [];
+  const tSummary = evening?.tomorrowSummary;
+  if (!tSummary || tomorrowStations.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  const tomorrowDate = tomorrowStations[0]?.initiatedAt || '';
+  const labels = { doc: '📭 공문', rate: '💰 요금제', status: '⚙️ 통신상태' };
+  let stations = tomorrowStations;
+  if (state.filterFailOnly) stations = stations.filter(s => s.overall === 'FAIL' || s.overall === 'WARN');
+  const byOverall = tSummary.byOverall;
+  el.innerHTML = `
+    <div class="slot-title">🌅 내일(${escapeHtml(tomorrowDate)}) 개시 예정 (${tomorrowStations.length}건)
+      &nbsp;·&nbsp; PASS ${byOverall.PASS || 0} · WARN ${byOverall.WARN || 0} · FAIL ${byOverall.FAIL || 0} · SKIP ${byOverall.SKIP || 0}
+    </div>
+    ${stations.map(s => renderTomorrowCard(s, labels)).join('')}
+  `;
+  for (const c of el.querySelectorAll('.card')) {
+    c.addEventListener('click', () => c.classList.toggle('expanded'));
+  }
+}
+
+function renderTomorrowCard(s, labels) {
+  const checks = Object.entries(s.checks || {}).map(([k, c]) =>
+    `<span class="${c.status.toLowerCase()}">${labels[k] || k} ${c.status}</span>`
+  ).join('');
+  return `
+    <div class="card ${(s.overall || 'SKIP').toLowerCase()}">
+      <div><b>[${s.overall || 'SKIP'}]</b> ${escapeHtml(s.stationName ?? s.address ?? `proj:${s.projectId}`)}
+        · ${escapeHtml(s.address || '')}
+      </div>
+      <div class="checks">${checks}</div>
+      <div class="evidence">
+        ${Object.entries(s.checks || {}).map(([k, c]) =>
+          `<div><b>${labels[k] || k}</b>: ${escapeHtml(c.message || '')}</div>`
+        ).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function renderSummary() {
