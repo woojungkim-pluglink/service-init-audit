@@ -67,3 +67,35 @@ test('parseGvizCsv: CRLF 응답 처리', () => {
   assert.equal(rows.length, 2);
   assert.deepEqual(rows[0], ['a', 'b']);
 });
+
+// A열(인덱스 0)=프로젝트 URL, F열(5)=주소, BR열(69)=서비스개시일
+function mkRowP(projectId, addr, br) {
+  const cells = new Array(70).fill('');
+  cells[0] = `https://connect.pluglink.kr/manage/projects/${projectId}/construction`;
+  cells[5] = addr;
+  cells[69] = br;
+  return cells;
+}
+
+test('judgeSheet: 같은 주소 2행 — projectId 매칭 행 우선 (예전 프로젝트 무시)', () => {
+  const rows = [
+    mkRowP('100', '서울 마포구 새창로8길 72', '2022-12-21'), // 예전 프로젝트
+    mkRowP('200', '서울 마포구 새창로8길 72', '2026-05-28')  // 오늘 개시 프로젝트
+  ];
+  const r = judgeSheet(rows, '서울 마포구 새창로8길 72', '2026-05-28', ['200']);
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.sheetProjectId, '200');
+  assert.equal(r.evidence.matchedByProjectId, true);
+  assert.equal(r.evidence.candidateCount, 2);
+});
+
+test('judgeSheet: 같은 주소 2행 — projectId 미일치 시 BR==today 행 우선', () => {
+  const rows = [
+    mkRowP('100', '서울 마포구 새창로8길 72', '2022-12-21'),
+    mkRowP('200', '서울 마포구 새창로8길 72', '2026-05-28')
+  ];
+  // projectIds 비어있음 → BR==today(2026-05-28) 행이 우선 선택
+  const r = judgeSheet(rows, '서울 마포구 새창로8길 72', '2026-05-28', []);
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.brValue, '2026-05-28');
+});
