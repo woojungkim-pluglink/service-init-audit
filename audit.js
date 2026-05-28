@@ -251,9 +251,13 @@ function computeSummary(stations) {
 }
 
 async function buildContext({ dryRun }) {
+  // chrome_profile 경로를 __dirname 기준 절대경로로 — Windows 작업 스케줄러(cwd=system32)에서도 동작
+  const profileDir = process.env.CHROME_PROFILE_DIR
+    ? path.resolve(__dirname, process.env.CHROME_PROFILE_DIR)
+    : path.join(__dirname, 'chrome_profile');
   // headless 기본: true. `--headful` 옵션 줄 때만 GUI.
   const browserContext = await openSession({
-    profileDir: process.env.CHROME_PROFILE_DIR || './chrome_profile',
+    profileDir,
     headless: !args.headful
   });
 
