@@ -231,17 +231,30 @@ async function main() {
     writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
     pruneDataDir(dataDir, { retentionDays: RETENTION_DAYS, today: date });
 
-    // 7. notify
+    // 7. notify — DM + 채널(설정 시) 동시 발송
+    const notifyText = buildSummaryText({
+      date, slot, summary, stations,
+      tomorrowStations, tomorrowSummary,
+      dashboardUrl: process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app'
+    });
     await sendDM({
       token: process.env.SLACK_BOT_TOKEN,
       userId: process.env.NOTIFY_SLACK_USER_ID,
-      text: buildSummaryText({
-        date, slot, summary, stations,
-        tomorrowStations, tomorrowSummary,
-        dashboardUrl: process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app'
-      }),
+      text: notifyText,
       dryRun
     });
+    if (process.env.NOTIFY_SLACK_CHANNEL_ID) {
+      try {
+        await sendDM({
+          token: process.env.SLACK_BOT_TOKEN,
+          userId: process.env.NOTIFY_SLACK_CHANNEL_ID,  // 채널 ID도 같은 chat.postMessage로 발송 가능
+          text: notifyText,
+          dryRun
+        });
+      } catch (e) {
+        console.error('[notify] 채널 발송 실패:', e?.message ?? String(e));
+      }
+    }
 
     // 8. Vercel 배포 (dryRun이면 skip). public/data 가 정적 서빙됨.
     if (!dryRun) {
