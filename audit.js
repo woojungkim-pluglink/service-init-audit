@@ -244,12 +244,16 @@ async function main() {
       dryRun
     });
     if (process.env.NOTIFY_SLACK_CHANNEL_ID) {
+      // 원본 서비스개시 알림(8AM/5PM) 메시지의 ts에 스레드 답글로.
+      // sourceMessages가 비어있으면(evening인데 메시지 없음 등) 채널 메인으로 fallback.
+      const threadTs = out.sourceMessages?.[0]?.ts || undefined;
       try {
         await sendDM({
           token: process.env.SLACK_BOT_TOKEN,
-          userId: process.env.NOTIFY_SLACK_CHANNEL_ID,  // 채널 ID도 같은 chat.postMessage로 발송 가능
+          userId: process.env.NOTIFY_SLACK_CHANNEL_ID,
           text: notifyText,
-          dryRun
+          dryRun,
+          threadTs
         });
       } catch (e) {
         console.error('[notify] 채널 발송 실패:', e?.message ?? String(e));
