@@ -110,11 +110,14 @@ function renderTomorrowCard(s, labels) {
   const checks = Object.entries(s.checks || {}).map(([k, c]) =>
     `<span class="${c.status.toLowerCase()}">${labels[k] || k} ${c.status}</span>`
   ).join('');
+  const pids = (s.projectIds && s.projectIds.length) ? s.projectIds.join(', ') : (s.projectId ?? '?');
+  const stid = s.stationId ? `충전소 ${escapeHtml(s.stationId)} · ` : '';
   return `
     <div class="card ${(s.overall || 'SKIP').toLowerCase()}">
       <div><b>[${s.overall || 'SKIP'}]</b> ${escapeHtml(s.stationName ?? s.address ?? `proj:${s.projectId}`)}
         · ${escapeHtml(s.address || '')}
       </div>
+      <div class="meta">프로젝트 ${escapeHtml(pids)} · ${stid}개시예정 ${escapeHtml(s.initiatedAt ?? '?')}</div>
       <div class="checks">${checks}</div>
       <div class="evidence">
         ${Object.entries(s.checks || {}).map(([k, c]) =>
@@ -169,10 +172,12 @@ function renderCard(s) {
   const total = s.totalChargers ?? s.chargerCount ?? '?';
   const newCount = (s.newChargers || []).length;
   const addr = s.address ? ` · ${escapeHtml(s.address)}` : '';
+  const pids = (s.projectIds && s.projectIds.length) ? `프로젝트 ${escapeHtml(s.projectIds.join(', '))} · ` : '';
+  const stid = s.stationId ? `충전소 ${escapeHtml(s.stationId)} · ` : '';
   return `
     <div class="card ${(s.overall || 'skip').toLowerCase()}">
       <div><b>[${s.overall ?? 'SKIP'}]</b> ${escapeHtml(name)}${addr}</div>
-      <div class="meta">총 ${escapeHtml(String(total))}기 · 신규 ${newCount}기 · 개시일 ${escapeHtml(s.initiatedAt ?? '?')}</div>
+      <div class="meta">${pids}${stid}총 ${escapeHtml(String(total))}기 · 신규 ${newCount}기 · 개시일 ${escapeHtml(s.initiatedAt ?? '?')}</div>
       <div class="checks">${checks}</div>
       <div class="evidence">
         ${Object.entries(s.checks || {}).map(([k, c]) =>
