@@ -7,15 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
 import { discoverStations } from './lib/discover.js';
-import { discoverTomorrowStations } from './lib/discover_tomorrow.js';
-import { resolveStationIdByProjectId } from './lib/resolve_station_id.js';
+import { discoverTomorrowStations, nextTargetDates } from './lib/discover_tomorrow.js';
 import { openSession, closeSession } from './lib/playwright_session.js';
 import { ensureSession } from './lib/plinkconnect_auth.js';
 import { fetchStationData, filterNewChargers } from './lib/enrich_station.js';
 import { checkDoc } from './lib/check_doc.js';
 import { checkRate } from './lib/check_rate.js';
 import { checkStatus } from './lib/check_status.js';
-import { checkStatusRecent } from './lib/check_status_recent.js';
 import { checkSheet } from './lib/check_sheet.js';
 import { sendDM, buildSummaryText } from './lib/notify.js';
 import { upsertManifest } from './lib/manifest.js';
@@ -154,52 +152,19 @@ async function main() {
       }
     }
 
-    // 4.5 evening 슬롯: 다음날 개시 예정 충전소 미리 검증
+    // 4.5 evening 슬롯: 다음 개시 예정 충전소 — 영차영차new BR 기재 확인만.
+    //   아직 개시 전이므로 공문/요금제/상태 등 운영 체크는 하지 않는다(무의미).
+    //   주말엔 자동 실행이 없어, 내일이 주말이면 그 주말+다음 영업일까지 한 번에 커버.
+    //   discoverTomorrowStations가 대상일(nextTargetDates) BR 행만 추출하므로, 그 목록 자체가 확인 결과.
     let tomorrowStations = [];
     let tomorrowSummary = null;
     if (slot === 'evening' && ctx) {
       try {
-        const referenceEpochMs = Date.now();
-        const previews = await discoverTomorrowStations(ctx.fetchSheetCsv, date);
-        console.log(`[tomorrow] ${previews.length} stations scheduled for next day`);
-        for (const p of previews) {
-          try {
-            const stationId = await resolveStationIdByProjectId(ctx.browserContext, p.projectId, PLINKCONNECT_BASE);
-            if (!stationId) {
-              errors.push({ projectId: p.projectId, stage: 'tomorrow_resolve', error: 'stationId not found' });
-              p.stationId = null;
-              p.chargers = [];
-              p.newChargers = [];
-              p.projectIds = [p.projectId];
-            } else {
-              const page = await ctx.browserContext.newPage();
-              try {
-                const data = await fetchStationData(page, stationId, PLINKCONNECT_BASE);
-                p.stationId = stationId;
-                p.stationName = data.stationName ?? null;
-                p.address = data.address ?? p.address ?? null;
-                p.projectIds = data.projectIds?.length ? data.projectIds : [p.projectId];
-                p.chargers = data.chargers ?? [];
-                p.newChargers = filterNewChargers(p.chargers, p.initiatedAt);
-                p.referenceEpochMs = referenceEpochMs;
-              } finally { await page.close(); }
-            }
-            // 3종 체크: 공문 / 요금제 / 상태(1시간 통신)
-            p.checks = {};
-            p.checks.doc    = await safeRun('doc',    () => checkDoc(p, ctx),           errors, p);
-            p.checks.rate   = await safeRun('rate',   () => checkRate(p, ctx),          errors, p);
-            p.checks.status = await safeRun('status', () => checkStatusRecent(p, ctx),  errors, p);
-            p.overall = computeOverall(p.checks);
-          } catch (e) {
-            if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
-            errors.push({ projectId: p.projectId, stage: 'tomorrow', error: (e?.message ?? String(e)).slice(0, 200) });
-            p.overall = 'SKIP';
-          }
-        }
-        tomorrowStations = previews;
-        tomorrowSummary = computeTomorrowSummary(previews);
+        const targetDates = nextTargetDates(date);
+        tomorrowStations = await discoverTomorrowStations(ctx.fetchSheetCsv, date);
+        console.log(`[tomorrow] ${tomorrowStations.length} stations scheduled for ${targetDates.join(', ')} (영차영차new BR 확인)`);
+        tomorrowSummary = { totalStations: tomorrowStations.length, dates: targetDates };
       } catch (e) {
-        if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
         console.error('[tomorrow] 실패:', e?.message ?? String(e));
         errors.push({ stage: 'tomorrow', error: (e?.message ?? String(e)).slice(0, 200) });
       }
@@ -324,19 +289,6 @@ function computeSummary(stations) {
     }
   }
   return { totalStations: stations.length, byOverall, byCheck };
-}
-
-function computeTomorrowSummary(previews) {
-  const byOverall = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
-  const byCheck = { doc: {}, rate: {}, status: {} };
-  for (const k of Object.keys(byCheck)) byCheck[k] = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
-  for (const s of previews) {
-    if (s.overall) byOverall[s.overall] = (byOverall[s.overall] || 0) + 1;
-    for (const [name, c] of Object.entries(s.checks || {})) {
-      if (byCheck[name]) byCheck[name][c.status] = (byCheck[name][c.status] || 0) + 1;
-    }
-  }
-  return { totalStations: previews.length, byOverall, byCheck };
 }
 
 async function buildContext({ dryRun }) {

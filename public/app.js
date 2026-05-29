@@ -81,49 +81,55 @@ function renderBody() {
   renderTomorrow();
 }
 
+const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+function withWeekday(date) {
+  if (!date) return '';
+  const [y, m, d] = date.split('-').map(Number);
+  return `${date}(${WEEKDAY[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
+}
+
 function renderTomorrow() {
   const el = document.getElementById('slot-tomorrow');
   const evening = state.slotData.evening;
   const tomorrowStations = evening?.tomorrowStations || [];
   const tSummary = evening?.tomorrowSummary;
-  if (!tSummary || tomorrowStations.length === 0) {
+  if (!tSummary || (tomorrowStations.length === 0 && !(tSummary.dates?.length))) {
     el.innerHTML = '';
     return;
   }
-  const tomorrowDate = tomorrowStations[0]?.initiatedAt || '';
-  const labels = { doc: '📭 공문', rate: '💰 요금제', status: '⚙️ 통신상태' };
-  let stations = tomorrowStations;
-  if (state.filterFailOnly) stations = stations.filter(s => s.overall === 'FAIL' || s.overall === 'WARN');
-  const byOverall = tSummary.byOverall;
-  el.innerHTML = `
-    <div class="slot-title">🌅 내일(${escapeHtml(tomorrowDate)}) 개시 예정 (${tomorrowStations.length}건)
-      &nbsp;·&nbsp; PASS ${byOverall.PASS || 0} · WARN ${byOverall.WARN || 0} · FAIL ${byOverall.FAIL || 0} · SKIP ${byOverall.SKIP || 0}
-    </div>
-    ${stations.map(s => renderTomorrowCard(s, labels)).join('')}
-  `;
-  for (const c of el.querySelectorAll('.card')) {
-    c.addEventListener('click', () => c.classList.toggle('expanded'));
+  // 대상일: summary.dates(빈 날짜 포함) 우선, 없으면 데이터에서 추출
+  const dates = tSummary.dates?.length
+    ? tSummary.dates
+    : [...new Set(tomorrowStations.map(s => s.initiatedAt))].sort();
+  const rangeLabel = dates.length === 1
+    ? `내일(${withWeekday(dates[0])})`
+    : `다음(${withWeekday(dates[0])}~${withWeekday(dates[dates.length - 1])})`;
+
+  let body;
+  if (dates.length <= 1) {
+    body = tomorrowStations.map(renderTomorrowCard).join('');
+  } else {
+    body = dates.map(d => {
+      const group = tomorrowStations.filter(s => s.initiatedAt === d);
+      const cards = group.length
+        ? group.map(renderTomorrowCard).join('')
+        : `<div class="meta" style="padding:4px 0">(없음)</div>`;
+      return `<div class="meta" style="margin-top:8px"><b>${escapeHtml(withWeekday(d))} · ${group.length}건</b></div>${cards}`;
+    }).join('');
   }
+
+  el.innerHTML = `
+    <div class="slot-title">🌅 ${escapeHtml(rangeLabel)} 개시 예정 (${tomorrowStations.length}건) · 영차영차new BR 기재 확인</div>
+    ${body}
+  `;
 }
 
-function renderTomorrowCard(s, labels) {
-  const checks = Object.entries(s.checks || {}).map(([k, c]) =>
-    `<span class="${c.status.toLowerCase()}">${labels[k] || k} ${c.status}</span>`
-  ).join('');
-  const pids = (s.projectIds && s.projectIds.length) ? s.projectIds.join(', ') : (s.projectId ?? '?');
-  const stid = s.stationId ? `충전소 ${escapeHtml(s.stationId)} · ` : '';
+function renderTomorrowCard(s) {
+  const name = s.projectName ?? s.address ?? `proj:${s.projectId}`;
   return `
-    <div class="card ${(s.overall || 'SKIP').toLowerCase()}">
-      <div><b>[${s.overall || 'SKIP'}]</b> ${escapeHtml(s.stationName ?? s.address ?? `proj:${s.projectId}`)}
-        · ${escapeHtml(s.address || '')}
-      </div>
-      <div class="meta">프로젝트 ${escapeHtml(pids)} · ${stid}개시예정 ${escapeHtml(s.initiatedAt ?? '?')}</div>
-      <div class="checks">${checks}</div>
-      <div class="evidence">
-        ${Object.entries(s.checks || {}).map(([k, c]) =>
-          `<div><b>${labels[k] || k}</b>: ${escapeHtml(c.message || '')}</div>`
-        ).join('')}
-      </div>
+    <div class="card">
+      <div><b>${escapeHtml(name)}</b>${s.address && s.address !== name ? ` · ${escapeHtml(s.address)}` : ''}</div>
+      <div class="meta">프로젝트 ${escapeHtml(s.projectId ?? '?')} · 개시예정 ${escapeHtml(withWeekday(s.initiatedAt))}</div>
     </div>
   `;
 }

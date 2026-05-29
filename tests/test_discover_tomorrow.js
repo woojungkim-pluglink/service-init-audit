@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { nextDay, pickTomorrowRows } from '../lib/discover_tomorrow.js';
+import { nextDay, nextTargetDates, pickTomorrowRows } from '../lib/discover_tomorrow.js';
 
 function mkRow(projectId, addr, br) {
   const c = new Array(70).fill('');
@@ -14,6 +14,35 @@ test('nextDay: 오늘 + 1일', () => {
   assert.equal(nextDay('2026-05-28'), '2026-05-29');
   assert.equal(nextDay('2026-12-31'), '2027-01-01');
   assert.equal(nextDay('2024-02-28'), '2024-02-29'); // 윤년
+});
+
+test('nextTargetDates: 평일은 내일 1개', () => {
+  // 2026-05-28(목) → 2026-05-29(금) 단일
+  assert.deepEqual(nextTargetDates('2026-05-28'), ['2026-05-29']);
+});
+
+test('nextTargetDates: 금요일 실행은 토·일·월 커버', () => {
+  // 2026-05-29(금) → 내일 토(05-30) → [토, 일, 월]
+  assert.deepEqual(nextTargetDates('2026-05-29'), ['2026-05-30', '2026-05-31', '2026-06-01']);
+});
+
+test('nextTargetDates: 토요일 실행은 일·월 커버', () => {
+  // 2026-05-30(토) → 내일 일(05-31) → [일, 월]
+  assert.deepEqual(nextTargetDates('2026-05-30'), ['2026-05-31', '2026-06-01']);
+});
+
+test('pickTomorrowRows: 금요일 실행 시 토·일·월 BR 모두 추출 + initiatedAt 보존', () => {
+  const rows = [
+    mkRow('100', '서울 ...', '2026-05-29'), // 금(오늘+0은 아님; 대상 아님)
+    mkRow('200', '경기 ...', '2026-05-30'), // 토 ✅
+    mkRow('300', '부산 ...', '2026-05-31'), // 일 ✅
+    mkRow('400', '대전 ...', '2026-06-01'), // 월 ✅
+    mkRow('500', '인천 ...', '2026-06-02')  // 화 (대상 아님)
+  ];
+  const out = pickTomorrowRows(rows, '2026-05-29');
+  assert.equal(out.length, 3);
+  assert.deepEqual(out.map(s => s.projectId), ['200', '300', '400']);
+  assert.deepEqual(out.map(s => s.initiatedAt), ['2026-05-30', '2026-05-31', '2026-06-01']);
 });
 
 test('pickTomorrowRows: BR == 내일 행만 추출', () => {
