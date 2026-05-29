@@ -61,6 +61,16 @@ test('pickTomorrowRows: BR == 내일 행만 추출', () => {
   assert.equal(out[1].projectId, '500');
 });
 
+test('pickTomorrowRows: 프로젝트명에 [HM] 있으면 제외', () => {
+  const rows = [
+    mkRow('200', '경기 ...', '2026-05-29'),                 // 포함
+    (() => { const c = mkRow('210', '서울 ...', '2026-05-29'); c[4] = '25년환경부_[HM]현대_1차'; return c; })() // [HM] 제외
+  ];
+  const out = pickTomorrowRows(rows, '2026-05-28');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].projectId, '200');
+});
+
 test('pickTomorrowRows: A열 URL이 깨졌으면 제외', () => {
   const c = new Array(70).fill('');
   c[0] = 'invalid url';

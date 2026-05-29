@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 
 import { discoverStations } from './lib/discover.js';
 import { discoverTomorrowStations, nextTargetDates } from './lib/discover_tomorrow.js';
+import { isExcludedProject } from './lib/project_filter.js';
 import { openSession, closeSession } from './lib/playwright_session.js';
 import { ensureSession } from './lib/plinkconnect_auth.js';
 import { fetchStationData, filterNewChargers } from './lib/enrich_station.js';
@@ -133,6 +134,12 @@ async function main() {
         // sheet 먼저 — 매칭 행의 projectName(E열)을 station에 채워 doc 키워드로 활용
         s.checks.sheet  = await safeRun('sheet',  () => checkSheet(s, ctx),  errors, s);
         s.projectName = s.checks.sheet.evidence?.projectName ?? null;
+        // [HM] 프로젝트는 우리 알림 대상 아님 — 이후 체크 생략하고 목록에서 제외
+        if (isExcludedProject(s.projectName)) {
+          s.excluded = true;
+          console.log(`  [exclude] [HM] 프로젝트 제외: ${s.stationName ?? s.stationId} (${s.projectName})`);
+          continue;
+        }
         s.checks.doc    = await safeRun('doc',    () => checkDoc(s, ctx),    errors, s);
         s.checks.rate   = await safeRun('rate',   () => checkRate(s, ctx),   errors, s);
         s.checks.status = await safeRun('status', () => checkStatus(s, ctx), errors, s);
@@ -151,6 +158,10 @@ async function main() {
         throw e;
       }
     }
+    // [HM] 제외 충전소를 목록에서 제거 (summary·notify·JSON 모두에서 빠짐)
+    const excludedCount = stations.filter(s => s.excluded).length;
+    if (excludedCount) console.log(`[exclude] [HM] 프로젝트 ${excludedCount}건 알림 대상에서 제외`);
+    stations = stations.filter(s => !s.excluded);
 
     // 4.5 evening 슬롯: 다음 개시 예정 충전소 — 영차영차new BR 기재 확인만.
     //   아직 개시 전이므로 공문/요금제/상태 등 운영 체크는 하지 않는다(무의미).
