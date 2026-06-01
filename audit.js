@@ -9,6 +9,7 @@ import { execSync } from 'node:child_process';
 import { discoverStations } from './lib/discover.js';
 import { discoverTomorrowStations, nextTargetDates } from './lib/discover_tomorrow.js';
 import { isExcludedProject } from './lib/project_filter.js';
+import { remediateStation } from './lib/remediate_charger.js';
 import { openSession, closeSession } from './lib/playwright_session.js';
 import { ensureSession } from './lib/plinkconnect_auth.js';
 import { fetchStationData, filterNewChargers } from './lib/enrich_station.js';
@@ -162,6 +163,26 @@ async function main() {
     const excludedCount = stations.filter(s => s.excluded).length;
     if (excludedCount) console.log(`[exclude] [HM] 프로젝트 ${excludedCount}건 알림 대상에서 제외`);
     stations = stations.filter(s => !s.excluded);
+
+    // 4.6 자동 원격제어 — '미운영이지만 최근(1h) 통신 중'인 충전기를 운영으로 전환 + 재조회 확인.
+    //     dryRun이면 후보만 보고(실제 제어 안 함). 대상 없으면 I/O 없이 즉시 통과.
+    if (ctx) {
+      const remRef = Date.now();
+      for (const s of stations) {
+        try {
+          const rem = await remediateStation(ctx, s, { dryRun, referenceEpochMs: remRef });
+          if (rem.targets > 0) {
+            s.remediation = rem;
+            const executed = rem.results.filter(r => r.executed).length;
+            const okN = rem.results.filter(r => r.ok).length;
+            console.log(`[remediate ${s.stationId}] 미운영+최근통신 ${rem.targets}건 → ${dryRun ? 'DRY RUN(미실행)' : `운영전환 성공 ${okN}/${executed}`}`);
+          }
+        } catch (e) {
+          if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
+          errors.push({ stationId: s.stationId, stage: 'remediate', error: (e?.message ?? String(e)).slice(0, 200) });
+        }
+      }
+    }
 
     // 4.5 evening 슬롯: 다음 개시 예정 충전소 — 영차영차new BR 기재 확인만.
     //   아직 개시 전이므로 공문/요금제/상태 등 운영 체크는 하지 않는다(무의미).

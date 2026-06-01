@@ -51,6 +51,21 @@ test('buildSummaryText: WARN-only 충전소는 FAIL 목록에 포함되지 않�
   assert.doesNotMatch(text, /BB빌라/);
 });
 
+test('buildSummaryText: 원격제어 결과 섹션 렌더', () => {
+  const text = buildSummaryText({
+    date: '2026-06-01', slot: 'morning',
+    summary: { totalStations: 1, byOverall: { PASS: 0, WARN: 1, FAIL: 0 },
+      byCheck: { doc:{PASS:1}, rate:{PASS:1}, status:{PASS:0}, sheet:{PASS:1} } },
+    stations: [
+      { stationName: '화성아파트', overall: 'WARN', checks: { status:{status:'WARN'} },
+        remediation: { targets: 1, results: [{ chargerId: '50947', ok: true, executed: true, after: '운영' }] } }
+    ],
+    dashboardUrl: 'https://x.app'
+  });
+  assert.match(text, /자동 원격제어\(미운영→운영\) 1건 · 성공 1/);
+  assert.match(text, /화성아파트 충전기 50947 → 운영 전환/);
+});
+
 test('buildSummaryText: stationName이 없으면 stationId로 fallback', () => {
   const text = buildSummaryText({
     date: '2026-05-22', slot: 'morning',
