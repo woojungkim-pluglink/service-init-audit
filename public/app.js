@@ -5,6 +5,13 @@ const state = {
   filterFailOnly: false
 };
 
+const PLINKCONNECT = 'https://connect.pluglink.kr';
+const stationUrl = id => `${PLINKCONNECT}/operation/stations/${id}/home`;
+const projectUrl = id => `${PLINKCONNECT}/manage/projects/${id}/contract`;
+// 카드 펼침 토글과 충돌하지 않도록 stopPropagation
+const linkTag = (href, label) =>
+  `<a href="${href}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${label}</a>`;
+
 async function init() {
   try {
     const r = await fetch('/data/index.json');
@@ -126,9 +133,10 @@ function renderTomorrow() {
 
 function renderTomorrowCard(s) {
   const name = s.projectName ?? s.address ?? `proj:${s.projectId}`;
+  const link = s.projectId ? ` ${linkTag(projectUrl(s.projectId), '🔗 프로젝트')}` : '';
   return `
     <div class="card">
-      <div><b>${escapeHtml(name)}</b>${s.address && s.address !== name ? ` · ${escapeHtml(s.address)}` : ''}</div>
+      <div><b>${escapeHtml(name)}</b>${s.address && s.address !== name ? ` · ${escapeHtml(s.address)}` : ''}${link}</div>
       <div class="meta">프로젝트 ${escapeHtml(s.projectId ?? '?')} · 개시예정 ${escapeHtml(withWeekday(s.initiatedAt))}</div>
     </div>
   `;
@@ -180,9 +188,10 @@ function renderCard(s) {
   const addr = s.address ? ` · ${escapeHtml(s.address)}` : '';
   const pids = (s.projectIds && s.projectIds.length) ? `프로젝트 ${escapeHtml(s.projectIds.join(', '))} · ` : '';
   const stid = s.stationId ? `충전소 ${escapeHtml(s.stationId)} · ` : '';
+  const link = s.stationId ? ` ${linkTag(stationUrl(s.stationId), '🔗 플링커넥트')}` : '';
   return `
     <div class="card ${(s.overall || 'skip').toLowerCase()}">
-      <div><b>[${s.overall ?? 'SKIP'}]</b> ${escapeHtml(name)}${addr}</div>
+      <div><b>[${s.overall ?? 'SKIP'}]</b> ${escapeHtml(name)}${addr}${link}</div>
       <div class="meta">${pids}${stid}총 ${escapeHtml(String(total))}기 · 신규 ${newCount}기 · 개시일 ${escapeHtml(s.initiatedAt ?? '?')}</div>
       <div class="checks">${checks}</div>
       <div class="evidence">
