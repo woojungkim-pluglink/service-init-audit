@@ -125,19 +125,32 @@ function renderTomorrow() {
     }).join('');
   }
 
+  const tb = tSummary.byOverall;
+  const statusLine = tb ? ` &nbsp;·&nbsp; 통신 PASS ${tb.PASS || 0} · WARN ${tb.WARN || 0} · FAIL ${tb.FAIL || 0} · SKIP ${tb.SKIP || 0}` : '';
   el.innerHTML = `
-    <div class="slot-title">🌅 ${escapeHtml(rangeLabel)} 개시 예정 (${tomorrowStations.length}건) · 영차영차new BR 기재 확인</div>
+    <div class="slot-title">🌅 ${escapeHtml(rangeLabel)} 개시 예정 (${tomorrowStations.length}건) · 영차영차new BR + 통신상태${statusLine}</div>
     ${body}
   `;
+  for (const c of el.querySelectorAll('.card')) {
+    c.addEventListener('click', () => c.classList.toggle('expanded'));
+  }
 }
 
 function renderTomorrowCard(s) {
-  const name = s.projectName ?? s.address ?? `proj:${s.projectId}`;
-  const link = s.projectId ? ` ${linkTag(projectUrl(s.projectId), '🔗 프로젝트')}` : '';
+  const name = s.stationName ?? s.projectName ?? s.address ?? `proj:${s.projectId}`;
+  const link = s.stationId
+    ? ` ${linkTag(stationUrl(s.stationId), '🔗 플링커넥트')}`
+    : (s.projectId ? ` ${linkTag(projectUrl(s.projectId), '🔗 프로젝트')}` : '');
+  const st = s.checks?.status;
+  const overall = s.overall || (st ? st.status : 'SKIP');
+  const badge = st ? `<span class="checks"><span class="${st.status.toLowerCase()}">⚙️ 통신 ${st.status}</span></span>` : '';
+  const stid = s.stationId ? `충전소 ${escapeHtml(s.stationId)} · ` : '';
   return `
-    <div class="card">
-      <div><b>${escapeHtml(name)}</b>${s.address && s.address !== name ? ` · ${escapeHtml(s.address)}` : ''}${link}</div>
-      <div class="meta">프로젝트 ${escapeHtml(s.projectId ?? '?')} · 개시예정 ${escapeHtml(withWeekday(s.initiatedAt))}</div>
+    <div class="card ${overall.toLowerCase()}">
+      <div><b>[${overall}]</b> ${escapeHtml(name)}${s.address && s.address !== name ? ` · ${escapeHtml(s.address)}` : ''}${link}</div>
+      <div class="meta">${stid}프로젝트 ${escapeHtml(s.projectId ?? '?')} · 개시예정 ${escapeHtml(withWeekday(s.initiatedAt))}</div>
+      ${badge}
+      ${st && st.message ? `<div class="evidence"><div><b>⚙️ 통신</b>: ${escapeHtml(st.message)}</div></div>` : ''}
     </div>
   `;
 }

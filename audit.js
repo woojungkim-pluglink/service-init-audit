@@ -8,6 +8,8 @@ import { execSync } from 'node:child_process';
 
 import { discoverStations } from './lib/discover.js';
 import { discoverTomorrowStations, nextTargetDates } from './lib/discover_tomorrow.js';
+import { resolveStationIdByProjectId } from './lib/resolve_station_id.js';
+import { checkStatusRecent } from './lib/check_status_recent.js';
 import { isExcludedProject } from './lib/project_filter.js';
 import { remediateStation } from './lib/remediate_charger.js';
 import { openSession, closeSession } from './lib/playwright_session.js';
@@ -184,19 +186,51 @@ async function main() {
       }
     }
 
-    // 4.5 evening 슬롯: 다음 개시 예정 충전소 — 영차영차new BR 기재 확인만.
-    //   아직 개시 전이므로 공문/요금제/상태 등 운영 체크는 하지 않는다(무의미).
-    //   주말엔 자동 실행이 없어, 내일이 주말이면 그 주말+다음 영업일까지 한 번에 커버.
-    //   discoverTomorrowStations가 대상일(nextTargetDates) BR 행만 추출하므로, 그 목록 자체가 확인 결과.
+    // 4.5 evening 슬롯: 다음 개시 예정 충전소 — 영차영차new BR 기재 확인 + 통신 상태 체크.
+    //   대상 색인은 BR(nextTargetDates)로, 공문/요금제는 개시 전이라 생략.
+    //   단, 각 충전소의 '정상 상태'(모든 충전기 마지막 통신 1시간 이내)는 미리 확인한다.
+    //   주말엔 자동 실행이 없어, 내일이 주말이면 그 주말+다음 영업일까지 한 번에 커버. [HM] 제외.
     let tomorrowStations = [];
     let tomorrowSummary = null;
     if (slot === 'evening' && ctx) {
       try {
         const targetDates = nextTargetDates(date);
+        const referenceEpochMs = Date.now();
         tomorrowStations = await discoverTomorrowStations(ctx.fetchSheetCsv, date);
-        console.log(`[tomorrow] ${tomorrowStations.length} stations scheduled for ${targetDates.join(', ')} (영차영차new BR 확인)`);
-        tomorrowSummary = { totalStations: tomorrowStations.length, dates: targetDates };
+        console.log(`[tomorrow] ${tomorrowStations.length} stations for ${targetDates.join(', ')} — 통신 1시간 상태 체크`);
+        for (const p of tomorrowStations) {
+          try {
+            const stationId = await resolveStationIdByProjectId(ctx.browserContext, p.projectId, PLINKCONNECT_BASE);
+            if (!stationId) {
+              p.stationId = null;
+              p.chargers = [];
+              p.checks = { status: { status: 'SKIP', evidence: { reason: 'STATION_NOT_FOUND' }, message: 'stationId 조회 실패' } };
+              p.overall = 'SKIP';
+              errors.push({ projectId: p.projectId, stage: 'tomorrow_resolve', error: 'stationId not found' });
+              continue;
+            }
+            const page = await ctx.browserContext.newPage();
+            try {
+              const data = await fetchStationData(page, stationId, PLINKCONNECT_BASE);
+              p.stationId = stationId;
+              p.stationName = data.stationName ?? p.projectName ?? null;
+              p.address = data.address ?? p.address ?? null;
+              p.chargers = data.chargers ?? [];
+              p.referenceEpochMs = referenceEpochMs;
+            } finally { await page.close(); }
+            // 통신 상태만 체크 (마지막 통신 1시간 이내). 공문/요금제는 개시 전이라 생략.
+            p.checks = { status: await safeRun('status', () => checkStatusRecent(p, ctx), errors, p) };
+            p.overall = p.checks.status.status;
+          } catch (e) {
+            if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
+            errors.push({ projectId: p.projectId, stage: 'tomorrow', error: (e?.message ?? String(e)).slice(0, 200) });
+            p.checks = p.checks || {};
+            p.overall = 'SKIP';
+          }
+        }
+        tomorrowSummary = computeTomorrowSummary(tomorrowStations, targetDates);
       } catch (e) {
+        if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') throw e;
         console.error('[tomorrow] 실패:', e?.message ?? String(e));
         errors.push({ stage: 'tomorrow', error: (e?.message ?? String(e)).slice(0, 200) });
       }
@@ -308,6 +342,14 @@ function computeOverall(checks) {
   if (statuses.includes('WARN')) return 'WARN';
   if (statuses.includes('PASS')) return 'PASS';
   return 'SKIP';
+}
+
+function computeTomorrowSummary(previews, dates) {
+  const byOverall = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
+  for (const s of previews) {
+    if (s.overall) byOverall[s.overall] = (byOverall[s.overall] || 0) + 1;
+  }
+  return { totalStations: previews.length, dates, byOverall };
 }
 
 function computeSummary(stations) {
