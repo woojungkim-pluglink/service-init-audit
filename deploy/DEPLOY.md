@@ -41,11 +41,13 @@ docker build -f deploy/Dockerfile -t service-init-audit .
 - **소형 VM(+docker)**: `docker run -d -p 8080:8080 --env-file prod.env -v /data/sia:/app/public/data service-init-audit`.
 메모리 2GB+ 권장(Chromium). 외부에서 호출 가능한 HTTPS URL 확보.
 
-## 5. n8n 워크플로 등록
-1. n8n.pluglink.kr → Import from File → `deploy/n8n-service-init-audit.json`.
-2. 두 HTTP 노드의 `url`을 4단계 컨테이너 URL로, 헤더 `x-trigger-secret`을 `TRIGGER_SECRET` 값으로 교체.
-3. **Publish 시 Version name 반드시 입력**(미입력 시 활성 버전 stale — 기존 트러블슈팅 참고).
-4. 워크플로 Active On.
+## 5. n8n 워크플로 (이미 사전 등록됨)
+- 워크플로 **`service-init-audit (trigger) [배포대기]`** = n8n.pluglink.kr에 이미 생성됨 (id `qONFiRZ9EtBj3g3o`, 현재 **비활성**).
+  - 구성: Schedule 08:05/17:05(Asia/Seoul) → HTTP POST `/run?slot=`(헤더 `x-trigger-secret`).
+  - (새로 만들 경우엔 `deploy/n8n-service-init-audit.json` Import from File.)
+1. 두 HTTP 노드의 `url`을 4단계 컨테이너 URL로, 헤더 `x-trigger-secret`을 `TRIGGER_SECRET` 값으로 교체. (이름의 `[배포대기]` 제거)
+2. **Publish 시 Version name 반드시 입력**(미입력 시 활성 버전 stale — 기존 트러블슈팅 참고).
+3. 워크플로 Active On.
 > cron: 매일 08:05/17:05(Asia/Seoul). 주말 제외하려면 `5 8 * * 1-5`로 변경(단, 다음날-예정 주말커버는 금요일 evening이 토·일·월을 다루도록 설계됨).
 
 ## 6. 검증 → 전환
