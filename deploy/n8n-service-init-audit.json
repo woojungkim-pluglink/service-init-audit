@@ -1,0 +1,60 @@
+{
+  "name": "service-init-audit (trigger)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "5 8 * * *" } ] }
+      },
+      "id": "sched-morning",
+      "name": "Schedule 08:05 KST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ 240, 200 ]
+    },
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "5 17 * * *" } ] }
+      },
+      "id": "sched-evening",
+      "name": "Schedule 17:05 KST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ 240, 420 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE_WITH_CONTAINER_HOST/run?slot=morning",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "x-trigger-secret", "value": "REPLACE_WITH_TRIGGER_SECRET" } ] },
+        "options": { "timeout": 30000 }
+      },
+      "id": "http-morning",
+      "name": "Trigger morning",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 560, 200 ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://REPLACE_WITH_CONTAINER_HOST/run?slot=evening",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "x-trigger-secret", "value": "REPLACE_WITH_TRIGGER_SECRET" } ] },
+        "options": { "timeout": 30000 }
+      },
+      "id": "http-evening",
+      "name": "Trigger evening",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 560, 420 ],
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Schedule 08:05 KST": { "main": [ [ { "node": "Trigger morning", "type": "main", "index": 0 } ] ] },
+    "Schedule 17:05 KST": { "main": [ [ { "node": "Trigger evening", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": { "timezone": "Asia/Seoul", "executionOrder": "v1" }
+}

@@ -1,0 +1,8 @@
+node_modules
+chrome_profile
+logs
+test-results
+public/data
+scripts/inspect_output
+.git
+*.log
