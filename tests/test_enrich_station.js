@@ -47,6 +47,21 @@ test('isChargerNormal: 3조건 AND', () => {
   }), false);
 });
 
+test('isChargerNormal: 파란불(충전준비/충전중/충전완료)은 정상 → WARN 아님', () => {
+  for (const cs of ['충전준비', '충전중', '충전완료', '충전 중']) {
+    assert.equal(
+      isChargerNormal({ operationStatus: '사업개시', deviceStatus: '운영', connectorStatus: cs }),
+      true, `${cs} 는 정상이어야 함`
+    );
+  }
+  for (const cs of ['사용불가', '미연결', '통신미연결']) {
+    assert.equal(
+      isChargerNormal({ operationStatus: '사업개시', deviceStatus: '운영', connectorStatus: cs }),
+      false, `${cs} 는 비정상이어야 함`
+    );
+  }
+});
+
 test('filterNewChargers: today 매칭만 남김', () => {
   const chargers = [
     { chargerId: '16740', initiatedAt: '2025-01-31' },
