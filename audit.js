@@ -296,7 +296,9 @@ async function main() {
     // 8. Vercel 배포 (dryRun이면 skip). public/data 가 정적 서빙됨.
     if (!dryRun) {
       try {
-        execSync(`npx vercel deploy --prod --yes`, {
+        // CI(GitHub Actions 등)에선 VERCEL_TOKEN 으로 비대화식 인증. 로컬은 로그인 세션 사용.
+        const tokenArg = process.env.VERCEL_TOKEN ? ` --token=${process.env.VERCEL_TOKEN}` : '';
+        execSync(`npx vercel deploy --prod --yes${tokenArg}`, {
           cwd: __dirname, stdio: 'inherit'
         });
       } catch (e) {

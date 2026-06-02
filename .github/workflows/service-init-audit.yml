@@ -1,0 +1,88 @@
+# service-init-audit — GitHub Actions로 PC 없이 무료 자동 실행
+#
+# GitHub 클라우드 러너에서 매일 08:05 / 17:05 KST에 자동 실행. PC·서버 불필요, 무료.
+# 기존 브라우저 폼 로그인(ensureSession)을 그대로 사용 → 별도 API 인증 작업 없음.
+#
+# ── 사용 준비 (1회) ──
+# 1) 이 레포를 GitHub에 push (Private 가능).
+# 2) GitHub 레포 → Settings → Secrets and variables → Actions → New repository secret 로 아래 등록:
+#    PLINKCONNECT_USERNAME, PLINKCONNECT_PASSWORD,
+#    SLACK_BOT_TOKEN, NOTIFY_SLACK_USER_ID, NOTIFY_SLACK_CHANNEL_ID, SLACK_CHANNEL_ID,
+#    GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_USER,
+#    PM_GROUP_EMAILS, VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID
+#    (값은 GitHub 웹에서 직접 입력 — 본인만 입력, 평문 노출 없음)
+# 3) Actions 탭에서 활성화. 끝. (수동 테스트는 "Run workflow" 버튼)
+#
+# cron은 UTC 기준: 08:05 KST = 23:05 UTC(전날), 17:05 KST = 08:05 UTC.
+# (GitHub cron은 몇 분 지연될 수 있음 — 운영상 무방)
+
+name: service-init-audit
+
+on:
+  schedule:
+    - cron: '5 23 * * *'   # 08:05 KST (morning)
+    - cron: '5 8 * * *'    # 17:05 KST (evening)
+  workflow_dispatch:        # 수동 실행 버튼
+    inputs:
+      slot:
+        description: 'morning | evening (수동 실행 시)'
+        required: false
+        default: 'morning'
+
+concurrency:
+  group: service-init-audit   # 동시 실행 방지(단일 세션)
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm install
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Determine slot (KST)
+        id: slot
+        run: |
+          if [ -n "${{ github.event.inputs.slot }}" ]; then
+            echo "slot=${{ github.event.inputs.slot }}" >> "$GITHUB_OUTPUT"
+          else
+            H=$(TZ=Asia/Seoul date +%H)
+            if [ "$H" -lt 12 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
+          fi
+
+      - name: Seed dashboard history (live에서 받아 누적 유지)
+        run: |
+          mkdir -p public/data
+          DATE=$(TZ=Asia/Seoul date +%F)
+          curl -fsS "https://service-init-audit.vercel.app/data/index.json" -o public/data/index.json || true
+
+      - name: Run audit
+        env:
+          PLINKCONNECT_USERNAME: ${{ secrets.PLINKCONNECT_USERNAME }}
+          PLINKCONNECT_PASSWORD: ${{ secrets.PLINKCONNECT_PASSWORD }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          NOTIFY_SLACK_USER_ID: ${{ secrets.NOTIFY_SLACK_USER_ID }}
+          NOTIFY_SLACK_CHANNEL_ID: ${{ secrets.NOTIFY_SLACK_CHANNEL_ID }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          PM_GROUP_EMAILS: ${{ secrets.PM_GROUP_EMAILS }}
+          PLINKCONNECT_BASE: 'https://connect.pluglink.kr'
+          DASHBOARD_URL: 'https://service-init-audit.vercel.app'
+          # Vercel 배포 (audit.js 내부 npx vercel deploy 용)
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: node audit.js --slot=${{ steps.slot.outputs.slot }}
