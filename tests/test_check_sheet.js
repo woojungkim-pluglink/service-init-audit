@@ -1,6 +1,62 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseGvizCsv, judgeSheet } from '../lib/check_sheet.js';
+import { parseGvizCsv, judgeSheet, findProjectNameByProjectIds } from '../lib/check_sheet.js';
+
+// A열(0)=프로젝트 URL, E열(4)=프로젝트명, BR열(69)=개시일
+function mkProjRow(projectId, projectName, br) {
+  const c = new Array(70).fill('');
+  c[0] = `https://connect.pluglink.kr/manage/projects/${projectId}/construction`;
+  c[4] = projectName;
+  c[69] = br || '';
+  return c;
+}
+
+test('findProjectNameByProjectIds: 주소 없어도 projectId로 [HM] 잡음 (삼계현대 케이스)', () => {
+  const rows = [
+    mkProjRow('24999', '[HM]창원 마산회원 삼계현대아파트_2차', '2026-06-02'),
+    mkProjRow('21217', '구버전아파트', '2025-01-01')
+  ];
+  assert.equal(
+    findProjectNameByProjectIds(rows, ['25000', '24999', '21217'], '2026-06-02'),
+    '[HM]창원 마산회원 삼계현대아파트_2차'
+  );
+});
+
+test('findProjectNameByProjectIds: HM 1차 + 비HM 2차 → 오늘 개시(BR) 비HM 우선', () => {
+  const rows = [
+    mkProjRow('25302', '[HM]경북 구미 금오산어울림2단지_1차', '2025-03-01'),
+    mkProjRow('26696', '25년환경부_경북 구미 금오산어울림2단지_2차', '2026-06-02')
+  ];
+  assert.equal(
+    findProjectNameByProjectIds(rows, ['26696', '25302'], '2026-06-02'),
+    '25년환경부_경북 구미 금오산어울림2단지_2차'
+  );
+});
+
+test('findProjectNameByProjectIds: BR 없는 [HM] 행만 있으면 [HM] 반환(제외 대상)', () => {
+  // 삼계현대 실제 케이스: [HM] 행들 모두 BR 비어있음
+  const rows = [
+    mkProjRow('24999', '[HM]창원 마산회원 삼계현대아파트_2차', ''),
+    mkProjRow('25000', '[HM]창원 마산회원 삼계현대아파트_3차', '')
+  ];
+  const pn = findProjectNameByProjectIds(rows, ['25000', '24999'], '2026-06-02');
+  assert.match(pn, /\[HM\]창원 마산회원 삼계현대/);
+});
+
+test('findProjectNameByProjectIds: HM(BR없음) + 환경부(BR있음) → 환경부 반환(포함)', () => {
+  // 강변보성타운 실제 케이스: 환경부 행에만 BR이 있음
+  const rows = [
+    mkProjRow('25362', '[HM]경북 구미 강변보성타운 1_1차', ''),
+    mkProjRow('25764', '25년환경부_강변보성타운_1차(대기1002,접수8/29)', '2026-03-03')
+  ];
+  const pn = findProjectNameByProjectIds(rows, ['25764', '25362'], '2026-06-02');
+  assert.match(pn, /25년환경부_강변보성타운/);
+});
+
+test('findProjectNameByProjectIds: 매칭 없으면 null', () => {
+  assert.equal(findProjectNameByProjectIds([mkProjRow('999', 'x', '')], ['111'], '2026-06-02'), null);
+  assert.equal(findProjectNameByProjectIds([], ['111'], '2026-06-02'), null);
+});
 
 // F열(인덱스 5)=주소, BR열(인덱스 69)=서비스개시일.
 // 테스트용으로 인덱스 위치까지 채운 wide row 생성 헬퍼.

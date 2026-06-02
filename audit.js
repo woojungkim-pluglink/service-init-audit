@@ -18,7 +18,7 @@ import { fetchStationData, filterNewChargers } from './lib/enrich_station.js';
 import { checkDoc } from './lib/check_doc.js';
 import { checkRate } from './lib/check_rate.js';
 import { checkStatus } from './lib/check_status.js';
-import { checkSheet } from './lib/check_sheet.js';
+import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib/check_sheet.js';
 import { sendDM, buildSummaryText } from './lib/notify.js';
 import { upsertManifest } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
@@ -130,6 +130,16 @@ async function main() {
       console.log(`[enrich] ${stations.length - errors.filter(e => e.stage === 'enrich').length} OK, ${errors.filter(e => e.stage === 'enrich').length} 실패`);
     }
 
+    // [HM] 제외 판정용 영차영차new 시트 1회 로드 (projectId 기준 — 주소 매칭 실패에도 견고).
+    let yeongchaRows = null;
+    if (ctx && stations.length) {
+      try {
+        yeongchaRows = await loadYeongchaRows(ctx.fetchSheetCsv);
+      } catch (e) {
+        console.warn('[exclude] 영차영차 시트 로드 실패 — projectId 기준 [HM] 판정 생략:', e?.message ?? String(e));
+      }
+    }
+
     // 4. 체커 순회
     for (const s of stations) {
       try {
@@ -137,10 +147,13 @@ async function main() {
         // sheet 먼저 — 매칭 행의 projectName(E열)을 station에 채워 doc 키워드로 활용
         s.checks.sheet  = await safeRun('sheet',  () => checkSheet(s, ctx),  errors, s);
         s.projectName = s.checks.sheet.evidence?.projectName ?? null;
-        // [HM] 프로젝트는 우리 알림 대상 아님 — 이후 체크 생략하고 목록에서 제외
-        if (isExcludedProject(s.projectName)) {
+        // [HM] 프로젝트는 우리 알림 대상 아님 — projectId 기준 조회(주소 무관)로 견고하게 판정.
+        //   checkSheet 주소 매칭이 실패(주소 null/부분매칭 오류)해도 projectId로 잡는다.
+        const pnById = yeongchaRows ? findProjectNameByProjectIds(yeongchaRows, s.projectIds, date) : null;
+        const pnForHm = pnById || s.projectName;
+        if (isExcludedProject(pnForHm)) {
           s.excluded = true;
-          console.log(`  [exclude] [HM] 프로젝트 제외: ${s.stationName ?? s.stationId} (${s.projectName})`);
+          console.log(`  [exclude] [HM] 프로젝트 제외: ${s.stationName ?? s.stationId} (${pnForHm})`);
           continue;
         }
         s.checks.doc    = await safeRun('doc',    () => checkDoc(s, ctx),    errors, s);
