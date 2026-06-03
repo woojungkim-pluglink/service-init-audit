@@ -1,6 +1,33 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSummaryText } from '../lib/notify.js';
+import { buildSummaryText, buildSummaryBlocks } from '../lib/notify.js';
+
+test('buildSummaryBlocks: 유효한 Block Kit 구조 + FAIL/대시보드 포함', () => {
+  const blocks = buildSummaryBlocks({
+    date: '2026-06-02', slot: 'evening',
+    summary: { totalStations: 3, byOverall: { PASS: 1, WARN: 1, FAIL: 1 },
+      byCheck: { doc:{PASS:3}, rate:{PASS:3}, status:{PASS:1}, sheet:{PASS:3} } },
+    stations: [
+      { stationName: 'A아파트', overall: 'FAIL', checks: { doc:{status:'FAIL'}, sheet:{status:'PASS'} } },
+      { stationName: 'B빌라', overall: 'WARN', checks: { status:{status:'WARN'} } },
+      { stationName: 'C타워', overall: 'PASS', checks: { doc:{status:'PASS'} } }
+    ],
+    tomorrowStations: [{ stationName: 'D', initiatedAt: '2026-06-03', checks:{status:{status:'PASS'}}, overall:'PASS' }],
+    tomorrowSummary: { totalStations: 1, dates: ['2026-06-03'], byOverall:{PASS:1,WARN:0,FAIL:0,SKIP:0} },
+    dashboardUrl: 'https://service-init-audit.vercel.app'
+  });
+  assert.ok(Array.isArray(blocks) && blocks.length >= 4);
+  assert.equal(blocks[0].type, 'header');
+  assert.ok(blocks[0].text.text.includes('서비스개시 검증'));
+  const json = JSON.stringify(blocks);
+  assert.match(json, /실패 1건/);
+  assert.match(json, /A아파트/);
+  assert.match(json, /개시 예정 1건/);
+  assert.match(json, /대시보드 열기/);
+  // header plain_text ≤150, section text ≤3000 (Slack 한도)
+  assert.ok(blocks[0].text.text.length <= 150);
+  for (const b of blocks) if (b.type==='section' && b.text) assert.ok(b.text.text.length <= 3000);
+});
 
 test('buildSummaryText: FAIL 건 나열 (stations 키)', () => {
   const text = buildSummaryText({

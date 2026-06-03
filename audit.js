@@ -19,7 +19,7 @@ import { checkDoc } from './lib/check_doc.js';
 import { checkRate } from './lib/check_rate.js';
 import { checkStatus } from './lib/check_status.js';
 import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib/check_sheet.js';
-import { sendDM, buildSummaryText } from './lib/notify.js';
+import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
 import { upsertManifest } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
 
@@ -283,16 +283,19 @@ async function main() {
     writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
     pruneDataDir(dataDir, { retentionDays: RETENTION_DAYS, today: date });
 
-    // 7. notify — DM + 채널(설정 시) 동시 발송
-    const notifyText = buildSummaryText({
+    // 7. notify — DM + 채널(설정 시) 동시 발송. 본문은 Block Kit(가시성), text는 알림 fallback.
+    const notifyArgs = {
       date, slot, summary, stations,
       tomorrowStations, tomorrowSummary,
       dashboardUrl: process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app'
-    });
+    };
+    const notifyText = buildSummaryText(notifyArgs);
+    const notifyBlocks = buildSummaryBlocks(notifyArgs);
     await sendDM({
       token: process.env.SLACK_BOT_TOKEN,
       userId: process.env.NOTIFY_SLACK_USER_ID,
       text: notifyText,
+      blocks: notifyBlocks,
       dryRun
     });
     if (process.env.NOTIFY_SLACK_CHANNEL_ID) {
@@ -304,6 +307,7 @@ async function main() {
           token: process.env.SLACK_BOT_TOKEN,
           userId: process.env.NOTIFY_SLACK_CHANNEL_ID,
           text: notifyText,
+          blocks: notifyBlocks,
           dryRun,
           threadTs
         });
