@@ -61,9 +61,10 @@ async function main() {
     }
   }
 
-  // 2. session/context — stations 0건이면 비싼 세션 생성 skip
+  // 2. session/context — 비싼 세션은 필요할 때만.
+  //   morning: 오늘 0건이면 생략. evening: 다음날 개시 예정 확인이 필요하므로 0건이어도 생성.
   let ctx = null;
-  if (stations.length > 0) {
+  if (stations.length > 0 || slot === 'evening') {
     try {
       ctx = await buildContext({ dryRun });
     } catch (e) {
@@ -71,7 +72,7 @@ async function main() {
       throw e;
     }
   } else {
-    console.log('[audit] stations 0건 — Playwright 세션 생략');
+    console.log('[audit] morning 0건 — Playwright 세션 생략');
   }
 
   try {
@@ -249,8 +250,13 @@ async function main() {
       }
     }
 
-    // 5. JSON 저장
+    // 5. JSON 저장 / 알림 — 단, 서비스개시 충전소 없는 날(쉬는날 포함)은 전부 생략.
+    //   evening은 '다음날 개시 예정'도 0건이어야 빈 날로 본다(오후알림의 다음날 개시 포함).
     const summary = computeSummary(stations);
+    const hasContent = stations.length > 0 || (slot === 'evening' && tomorrowStations.length > 0);
+    if (!hasContent) {
+      console.log(`[skip] ${date} ${slot}: 서비스개시 충전소 없음 — 알림·대시보드 갱신 생략 (today=${stations.length}${slot === 'evening' ? `, tomorrow=${tomorrowStations.length}` : ''})`);
+    } else {
     const out = {
       runAt: new Date().toISOString(),
       slot, date,
@@ -318,6 +324,7 @@ async function main() {
         console.error('[audit] Vercel 배포 실패 (로컬 JSON은 보존됨):', e?.message ?? String(e));
       }
     }
+    } // end: hasContent
   } finally {
     await closeSession();
   }
