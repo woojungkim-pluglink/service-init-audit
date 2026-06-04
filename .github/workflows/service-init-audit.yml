@@ -18,14 +18,14 @@
 
 name: service-init-audit
 
+# 정시성: GitHub의 schedule(cron)은 무료 러너 큐로 1~3시간 지연됨 → 사용 안 함.
+# 대신 외부 정시 트리거(n8n Schedule 08:05/17:05 KST)가 workflow_dispatch API를 호출 →
+# dispatch는 큐 지연 없이 즉시 실행되어 정시 보장. (n8n 워크플로 id qONFiRZ9EtBj3g3o)
 on:
-  schedule:
-    - cron: '5 23 * * *'   # 08:05 KST (morning)
-    - cron: '5 8 * * *'    # 17:05 KST (evening)
-  workflow_dispatch:        # 수동 실행 버튼
+  workflow_dispatch:        # 외부(n8n) 트리거 / 수동 실행
     inputs:
       slot:
-        description: 'morning | evening (수동 실행 시)'
+        description: 'morning | evening'
         required: false
         default: 'morning'
 
