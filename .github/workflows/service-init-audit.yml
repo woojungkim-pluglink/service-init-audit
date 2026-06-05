@@ -78,6 +78,9 @@ jobs:
           GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
           GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          # 서비스계정(권장): 시트·Gmail을 API로 접근 — 로그인된 브라우저 세션 불필요(CI 대응).
+          #   설정되면 위 GMAIL_* OAuth 대신 이걸 사용. GMAIL_USER(임퍼소네이션 대상)는 계속 필요.
+          GOOGLE_SA_KEY: ${{ secrets.GOOGLE_SA_KEY }}
           PM_GROUP_EMAILS: ${{ secrets.PM_GROUP_EMAILS }}
           PLINKCONNECT_BASE: 'https://connect.pluglink.kr'
           DASHBOARD_URL: 'https://service-init-audit.vercel.app'

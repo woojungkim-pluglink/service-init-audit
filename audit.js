@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import dotenv from 'dotenv';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { google } from 'googleapis';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
@@ -22,6 +21,7 @@ import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib
 import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
 import { upsertManifest } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
+import { buildGoogleAuth, makeSheetsCsvFetcher } from './lib/google_auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, 'config', '.env') });
@@ -402,11 +402,18 @@ async function buildContext({ dryRun }) {
     headless: !args.headful
   });
 
-  const oauth2Client = new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET);
-  oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
+  // 구글 인증: 시트·Gmail 분리. (lib/google_auth.js 참고)
+  //   - 시트: GOOGLE_SA_KEY 있으면 Sheets API(브라우저 세션 불필요, CI 대응), 없으면 브라우저 gviz.
+  //   - Gmail: 도메인위임(GOOGLE_DELEGATION=1)이면 SA, 아니면 OAuth 리프레시 토큰.
+  const { sheetsMode, gmailMode, sheetsAuth, gmailAuth } = buildGoogleAuth();
+  const oauth2Client = gmailAuth; // google.gmail({auth}) — JWT/OAuth2 모두 호환
+  const saSheetsFetch = sheetsMode === 'sa' ? makeSheetsCsvFetcher(sheetsAuth) : null;
+  console.log(`[auth] sheets=${sheetsMode} gmail=${gmailMode}`);
 
   const fetchSheetCsv = async (url) => {
+    // SA 모드: Sheets API로 받아 gviz 호환 CSV로 직렬화 (브라우저 세션 불필요).
+    if (saSheetsFetch) return saSheetsFetch(url);
+    // 레거시: 로그인된 docs.google.com 세션에서 gviz CSV fetch.
     const page = await browserContext.newPage();
     try {
       await page.goto('https://docs.google.com');
