@@ -19,7 +19,7 @@ import { checkRate } from './lib/check_rate.js';
 import { checkStatus } from './lib/check_status.js';
 import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib/check_sheet.js';
 import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
-import { upsertManifest } from './lib/manifest.js';
+import { upsertManifest, slotAlreadyDone } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
 import { buildGoogleAuth, makeSheetsCsvFetcher } from './lib/google_auth.js';
 
@@ -41,6 +41,24 @@ async function main() {
   mkdirSync(logsDir, { recursive: true });
 
   console.log(`[audit] slot=${slot} date=${date} dryRun=${dryRun}`);
+
+  // 0. 중복 실행 방지 — 같은 (date, slot)이 이미 처리됐으면 즉시 종료.
+  //   n8n 정시 트리거(on-time)와 GitHub cron 백업(지연)이 둘 다 도는 구조라,
+  //   먼저 끝난 실행이 manifest(index.json)를 배포해 두면 이후 실행은 여기서 건너뛴다.
+  //   (CI는 시작 시 live index.json을 seed함. --force 로 무시 가능 — 수동 재실행용.)
+  if (!args.force && !dryRun) {
+    const manifestPath = path.join(dataDir, 'index.json');
+    if (existsSync(manifestPath)) {
+      try {
+        const m = JSON.parse(readFileSync(manifestPath, 'utf8'));
+        if (slotAlreadyDone(m, date, slot)) {
+          console.log(`[dedup] ${date} ${slot} 이미 처리됨 — 알림·배포 생략 (재실행: --force)`);
+          console.log('EXIT_CODE 0');
+          return;
+        }
+      } catch { /* manifest 파싱 실패 → 그냥 진행 */ }
+    }
+  }
 
   // 1. discover — 슬랙 1 메시지에서 여러 충전소 추출
   let stations;

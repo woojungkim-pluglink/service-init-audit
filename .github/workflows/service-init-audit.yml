@@ -18,16 +18,22 @@
 
 name: service-init-audit
 
-# 정시성: GitHub의 schedule(cron)은 무료 러너 큐로 1~3시간 지연됨 → 사용 안 함.
-# 대신 외부 정시 트리거(n8n Schedule 08:05/17:05 KST)가 workflow_dispatch API를 호출 →
-# dispatch는 큐 지연 없이 즉시 실행되어 정시 보장. (n8n 워크플로 id qONFiRZ9EtBj3g3o)
+# 트리거 이중화 (안전망):
+#  1) 정시성 — n8n Schedule(08:05/17:05 KST)이 workflow_dispatch를 호출 → 큐 지연 없이 정시 실행.
+#  2) 백업 — GitHub schedule(cron). 무료 러너 큐로 1~3시간 지연되지만 "무조건" 실행됨.
+#     n8n이 실패한 날에도 cron이 늦게라도 실행해 알림 누락을 막는다.
+#  중복 방지: audit.js가 시작 시 live manifest(index.json)를 확인해, 같은 (date,slot)이 이미
+#     처리됐으면 즉시 종료(EXIT 0) → n8n이 정상이면 cron 백업은 자동으로 건너뛴다(중복 발송 없음).
 on:
-  workflow_dispatch:        # 외부(n8n) 트리거 / 수동 실행
+  workflow_dispatch:        # 외부(n8n) 정시 트리거 / 수동 실행
     inputs:
       slot:
         description: 'morning | evening'
         required: false
         default: 'morning'
+  schedule:                 # 백업(지연 가능) — n8n 실패 시 누락 방지
+    - cron: '5 23 * * *'    #  08:05 KST = 23:05 UTC(전날) → morning
+    - cron: '5 8 * * *'     #  17:05 KST = 08:05 UTC       → evening
 
 concurrency:
   group: service-init-audit   # 동시 실행 방지(단일 세션)
@@ -54,7 +60,13 @@ jobs:
         id: slot
         run: |
           if [ -n "${{ github.event.inputs.slot }}" ]; then
+            # workflow_dispatch(n8n/수동): 입력 슬롯 그대로
             echo "slot=${{ github.event.inputs.slot }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "5 23 * * *" ]; then
+            # 백업 cron: 어느 cron이 발화했는지로 슬롯 결정(지연돼도 정확)
+            echo "slot=morning" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "5 8 * * *" ]; then
+            echo "slot=evening" >> "$GITHUB_OUTPUT"
           else
             H=$(TZ=Asia/Seoul date +%H)
             if [ "$H" -lt 12 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
