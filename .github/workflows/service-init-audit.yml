@@ -72,11 +72,20 @@ jobs:
             if [ "$H" -lt 12 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
           fi
 
-      - name: Seed dashboard history (live에서 받아 누적 유지)
+      - name: Seed dashboard history (live 전체 받아 누적 — 과거 파일 유실 방지)
         run: |
+          # 러너는 매번 빈 상태로 시작 → 배포 시 폴더에 있는 파일만 라이브에 남는다.
+          # index.json(목록)뿐 아니라 참조하는 과거 데이터 파일도 모두 받아와야
+          # 배포에 포함돼 이력이 보존된다. (안 그러면 최신 1개만 남고 과거는 404)
           mkdir -p public/data
-          DATE=$(TZ=Asia/Seoul date +%F)
-          curl -fsS "https://service-init-audit.vercel.app/data/index.json" -o public/data/index.json || true
+          BASE="https://service-init-audit.vercel.app/data"
+          curl -fsS "$BASE/index.json" -o public/data/index.json || true
+          if [ -f public/data/index.json ]; then
+            jq -r '.slots[].file' public/data/index.json 2>/dev/null | while read -r f; do
+              if [ -n "$f" ]; then curl -fsS "$BASE/$f" -o "public/data/$f" || true; fi
+            done
+            echo "seeded $(ls public/data/*.json | wc -l) data file(s)"
+          fi
 
       - name: Run audit
         env:
