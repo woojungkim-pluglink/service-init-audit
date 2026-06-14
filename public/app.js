@@ -17,6 +17,8 @@ async function init() {
     const r = await fetch('/data/index.json');
     if (!r.ok) { renderEmpty(); return; }
     state.manifest = await r.json();
+    // empty 마커(개시 없는 날 — 백업 cron dedup용)는 대시보드에 표시하지 않음
+    state.manifest.slots = (state.manifest.slots || []).filter(s => s.file && !s.empty);
   } catch (e) {
     renderEmpty();
     return;

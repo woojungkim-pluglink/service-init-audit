@@ -268,85 +268,84 @@ async function main() {
       }
     }
 
-    // 5. JSON 저장 / 알림 — 단, 서비스개시 충전소 없는 날(쉬는날 포함)은 전부 생략.
+    // 5. 알림 / 저장 — 서비스개시 충전소 유무로 분기.
     //   evening은 '다음날 개시 예정'도 0건이어야 빈 날로 본다(오후알림의 다음날 개시 포함).
     const summary = computeSummary(stations);
     const hasContent = stations.length > 0 || (slot === 'evening' && tomorrowStations.length > 0);
-    if (!hasContent) {
-      console.log(`[skip] ${date} ${slot}: 서비스개시 충전소 없음 — 알림·대시보드 갱신 생략 (today=${stations.length}${slot === 'evening' ? `, tomorrow=${tomorrowStations.length}` : ''})`);
-    } else {
-    const out = {
-      runAt: new Date().toISOString(),
-      slot, date,
-      sourceMessages: dedupeMessages(stations.map(s => ({
-        ts: s.ts, permalink: s.permalink,
-        stationLinks: s.stationId ? [`${PLINKCONNECT_BASE}/operation/stations/${s.stationId}/home`] : []
-      }))),
-      stations, summary,
-      tomorrowStations, tomorrowSummary,
-      errors
-    };
-    const outFile = path.join(dataDir, `${date}-${slot}.json`);
-    writeFileSync(outFile, JSON.stringify(out, null, 2));
-    console.log(`[write] ${outFile}`);
-
-    // 6. manifest 갱신 + retention
+    const dashboardUrl = process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app';
     const manifestPath = path.join(dataDir, 'index.json');
     const manifest = existsSync(manifestPath)
       ? JSON.parse(readFileSync(manifestPath, 'utf8'))
       : { slots: [] };
-    const newManifest = upsertManifest(manifest, {
-      date, slot, file: `${date}-${slot}.json`, summary
-    }, { retentionDays: RETENTION_DAYS, today: date });
+    let manifestEntry;
+
+    if (hasContent) {
+      const out = {
+        runAt: new Date().toISOString(),
+        slot, date,
+        sourceMessages: dedupeMessages(stations.map(s => ({
+          ts: s.ts, permalink: s.permalink,
+          stationLinks: s.stationId ? [`${PLINKCONNECT_BASE}/operation/stations/${s.stationId}/home`] : []
+        }))),
+        stations, summary,
+        tomorrowStations, tomorrowSummary,
+        errors
+      };
+      const outFile = path.join(dataDir, `${date}-${slot}.json`);
+      writeFileSync(outFile, JSON.stringify(out, null, 2));
+      console.log(`[write] ${outFile}`);
+      manifestEntry = { date, slot, file: `${date}-${slot}.json`, summary };
+
+      // notify — DM + 채널(설정 시). 본문 Block Kit(가시성), text는 알림 fallback.
+      const notifyArgs = { date, slot, summary, stations, tomorrowStations, tomorrowSummary, dashboardUrl };
+      const notifyText = buildSummaryText(notifyArgs);
+      const notifyBlocks = buildSummaryBlocks(notifyArgs);
+      await sendDM({
+        token: process.env.SLACK_BOT_TOKEN,
+        userId: process.env.NOTIFY_SLACK_USER_ID,
+        text: notifyText, blocks: notifyBlocks, dryRun
+      });
+      if (process.env.NOTIFY_SLACK_CHANNEL_ID) {
+        // 원본 서비스개시 알림(8AM/5PM) ts에 스레드 답글. 없으면 채널 메인 fallback.
+        const threadTs = out.sourceMessages?.[0]?.ts || undefined;
+        try {
+          await sendDM({
+            token: process.env.SLACK_BOT_TOKEN,
+            userId: process.env.NOTIFY_SLACK_CHANNEL_ID,
+            text: notifyText, blocks: notifyBlocks, dryRun, threadTs
+          });
+        } catch (e) {
+          console.error('[notify] 채널 발송 실패:', e?.message ?? String(e));
+        }
+      }
+    } else {
+      // 서비스개시 충전소 없음(쉬는날 등) — 쿠이 DM에만 통지(채널 X).
+      //   manifest엔 empty 마커만 남겨 백업 cron이 중복 통지하지 않게 함(대시보드엔 미표시).
+      console.log(`[empty] ${date} ${slot}: 서비스개시 충전소 없음 — DM만 통지 (today=${stations.length}${slot === 'evening' ? `, tomorrow=${tomorrowStations.length}` : ''})`);
+      const slotKo = slot === 'morning' ? '오전' : '저녁';
+      await sendDM({
+        token: process.env.SLACK_BOT_TOKEN,
+        userId: process.env.NOTIFY_SLACK_USER_ID,
+        text: `🔌 서비스개시 검증 — ${date} ${slotKo}\n오늘 서비스개시 충전소가 없습니다. (검증 대상 없음)`,
+        dryRun
+      });
+      manifestEntry = { date, slot, empty: true, summary: { totalStations: 0 } };
+    }
+
+    // 6. manifest 갱신 + retention + 배포 — 빈 날도 마커를 게시해 백업 cron이 dedup으로 skip.
+    const newManifest = upsertManifest(manifest, manifestEntry, { retentionDays: RETENTION_DAYS, today: date });
     writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
     pruneDataDir(dataDir, { retentionDays: RETENTION_DAYS, today: date });
 
-    // 7. notify — DM + 채널(설정 시) 동시 발송. 본문은 Block Kit(가시성), text는 알림 fallback.
-    const notifyArgs = {
-      date, slot, summary, stations,
-      tomorrowStations, tomorrowSummary,
-      dashboardUrl: process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app'
-    };
-    const notifyText = buildSummaryText(notifyArgs);
-    const notifyBlocks = buildSummaryBlocks(notifyArgs);
-    await sendDM({
-      token: process.env.SLACK_BOT_TOKEN,
-      userId: process.env.NOTIFY_SLACK_USER_ID,
-      text: notifyText,
-      blocks: notifyBlocks,
-      dryRun
-    });
-    if (process.env.NOTIFY_SLACK_CHANNEL_ID) {
-      // 원본 서비스개시 알림(8AM/5PM) 메시지의 ts에 스레드 답글로.
-      // sourceMessages가 비어있으면(evening인데 메시지 없음 등) 채널 메인으로 fallback.
-      const threadTs = out.sourceMessages?.[0]?.ts || undefined;
-      try {
-        await sendDM({
-          token: process.env.SLACK_BOT_TOKEN,
-          userId: process.env.NOTIFY_SLACK_CHANNEL_ID,
-          text: notifyText,
-          blocks: notifyBlocks,
-          dryRun,
-          threadTs
-        });
-      } catch (e) {
-        console.error('[notify] 채널 발송 실패:', e?.message ?? String(e));
-      }
-    }
-
-    // 8. Vercel 배포 (dryRun이면 skip). public/data 가 정적 서빙됨.
     if (!dryRun) {
       try {
         // CI(GitHub Actions 등)에선 VERCEL_TOKEN 으로 비대화식 인증. 로컬은 로그인 세션 사용.
         const tokenArg = process.env.VERCEL_TOKEN ? ` --token=${process.env.VERCEL_TOKEN}` : '';
-        execSync(`npx vercel deploy --prod --yes${tokenArg}`, {
-          cwd: __dirname, stdio: 'inherit'
-        });
+        execSync(`npx vercel deploy --prod --yes${tokenArg}`, { cwd: __dirname, stdio: 'inherit' });
       } catch (e) {
         console.error('[audit] Vercel 배포 실패 (로컬 JSON은 보존됨):', e?.message ?? String(e));
       }
     }
-    } // end: hasContent
   } finally {
     await closeSession();
   }

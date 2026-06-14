@@ -81,7 +81,7 @@ jobs:
           BASE="https://service-init-audit.vercel.app/data"
           curl -fsS "$BASE/index.json" -o public/data/index.json || true
           if [ -f public/data/index.json ]; then
-            jq -r '.slots[].file' public/data/index.json 2>/dev/null | while read -r f; do
+            jq -r '.slots[].file // empty' public/data/index.json 2>/dev/null | while read -r f; do
               if [ -n "$f" ]; then curl -fsS "$BASE/$f" -o "public/data/$f" || true; fi
             done
             echo "seeded $(ls public/data/*.json | wc -l) data file(s)"
