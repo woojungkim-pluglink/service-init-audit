@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchEmails, subtractDays } from '../lib/check_doc.js';
+import { matchEmails, subtractDays, nameVariants } from '../lib/check_doc.js';
 import { readFileSync } from 'node:fs';
 
 const { threads } = JSON.parse(readFileSync(new URL('./fixtures/gmail_threads.json', import.meta.url)));
@@ -47,6 +47,40 @@ test('matchEmails: PASS 시 gmailUrl이 threadId 사용', () => {
 
 test('subtractDays: 30일 빼기', () => {
   assert.equal(subtractDays('2026-05-22', 30), '2026-04-22');
+});
+
+test('nameVariants: 차수 위치/건물접미사 표기차 흡수 (실제 6/17 사례)', () => {
+  // "창포2차아이파크" → "창포아이파크" (메일 제목 "창포아이파크2차"와 부분일치)
+  assert.ok(nameVariants('창포2차아이파크').includes('창포아이파크'));
+  // "가곡시영맨션" → "가곡시영" (메일 제목 "가곡시영APT"와 부분일치)
+  assert.ok(nameVariants('가곡시영맨션').includes('가곡시영'));
+  assert.deepEqual(nameVariants(''), []);
+});
+
+test('matchEmails: 어순 다른 PM 공문도 변형 키워드로 PASS (창포 사례)', () => {
+  const t = [{
+    id: 'c1', threadId: 'cc1',
+    subject: '[플러그링크] 창포아이파크2차 입주자대표회의 서비스개시 안내',
+    from: 'chunggeun.kim@pluglink.kr',
+    to: ['office-a@daum.net'], cc: ['"PM팀" <pm@pluglink.kr>'],
+    date: '2026-06-10T17:03:53+09:00', snippet: '서비스개시 안내'
+  }];
+  const keywords = [...new Set(['창포2차아이파크'].flatMap(nameVariants))];
+  const r = matchEmails(t, { keywords, pmEmails, myEmail: 'woojung.kim@pluglink.kr', groupEmails: ['pm@pluglink.kr'] });
+  assert.equal(r.status, 'PASS');
+});
+
+test('matchEmails: 맨션 vs APT 표기차도 변형 키워드로 PASS (가곡 사례)', () => {
+  const t = [{
+    id: 'g1', threadId: 'gg1',
+    subject: '[플러그링크] 가곡시영APT 서비스개시 안내',
+    from: 'chunggeun.kim@pluglink.kr',
+    to: ['office-b@daum.net'], cc: ['"PM팀" <pm@pluglink.kr>'],
+    date: '2026-06-17T10:43:23+09:00', snippet: '서비스개시 안내'
+  }];
+  const keywords = [...new Set(['가곡시영맨션'].flatMap(nameVariants))];
+  const r = matchEmails(t, { keywords, pmEmails, myEmail: 'woojung.kim@pluglink.kr', groupEmails: ['pm@pluglink.kr'] });
+  assert.equal(r.status, 'PASS');
 });
 
 test('matchEmails: PASS — To에 그룹 메일 (display name 형식)', () => {
