@@ -6,7 +6,14 @@ test('extractTicketId: T-숫자 추출', () => {
   assert.equal(extractTicketId('T-547438'), '547438');
   assert.equal(extractTicketId('  T-549877 '), '549877');
 });
-test('extractTicketId: 메모/빈칸은 null', () => {
+test('extractTicketId: 접두사 없는 숫자형 티켓ID', () => {
+  assert.equal(extractTicketId('604953'), '604953');
+  assert.equal(extractTicketId('  604953 '), '604953');
+});
+test('extractTicketId: 이관(A > B)이면 마지막 활성 티켓', () => {
+  assert.equal(extractTicketId('592142 에바 조치 후 유지보수 이관 필요 > 604862'), '604862');
+});
+test('extractTicketId: 6자리 숫자 없는 메모/빈칸은 null', () => {
   assert.equal(extractTicketId('거점별 1기만 사진 확보하여 재요청'), null);
   assert.equal(extractTicketId(''), null);
   assert.equal(extractTicketId(null), null);
