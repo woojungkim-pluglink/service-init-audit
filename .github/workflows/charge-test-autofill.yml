@@ -1,0 +1,38 @@
+name: charge-test-autofill
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 09:00 KST
+    - cron: '0 8 * * *'   # 17:00 KST
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '드라이런(쓰기 안 함)'
+        type: boolean
+        default: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: charge-test-autofill
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - name: Run autofill
+        env:
+          PLINKCONNECT_USERNAME: ${{ secrets.PLINKCONNECT_USERNAME }}
+          PLINKCONNECT_PASSWORD: ${{ secrets.PLINKCONNECT_PASSWORD }}
+          GOOGLE_SA_KEY: ${{ secrets.GOOGLE_SA_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          NOTIFY_SLACK_USER_ID: ${{ secrets.NOTIFY_SLACK_USER_ID }}
+          NOTIFY_SLACK_CHANNEL_ID: ${{ secrets.NOTIFY_SLACK_CHANNEL_ID }}
+          SPREADSHEET_ID: 1uf9BmYEvT424rUOD9mpCheVkuBS_7xb9LOjM4aC57bY
+          SHEET_GID: '619747296'
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            node index.js --dry-run
+          else
+            node index.js
+          fi
