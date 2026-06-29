@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { judgeRate, extractPrice, extractContractTab, reconcileWithContract } from '../lib/check_rate.js';
 
-// 시트 wide row 생성: B=projectId, AY=basic, AZ=special, BA=period
+// 시트 wide row 생성: B(1)=projectId, BD(55)=basic, BF(57)=special, BG(58)=period
 function mkRow(projectId, basic, special, period = '') {
   const c = new Array(60).fill('');
   c[1] = projectId;
-  c[50] = basic;
-  c[51] = special;
-  c[52] = period;
+  c[55] = basic;
+  c[57] = special;
+  c[58] = period;
   return c;
 }
 
