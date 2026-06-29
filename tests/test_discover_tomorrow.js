@@ -6,7 +6,7 @@ function mkRow(projectId, addr, br) {
   const c = new Array(70).fill('');
   c[0] = `https://connect.pluglink.kr/manage/projects/${projectId}/construction`;
   c[5] = addr;
-  c[69] = br;
+  c[68] = br;
   return c;
 }
 
@@ -75,7 +75,7 @@ test('pickTomorrowRows: A열 URL이 깨졌으면 제외', () => {
   const c = new Array(70).fill('');
   c[0] = 'invalid url';
   c[5] = '주소';
-  c[69] = '2026-05-29';
+  c[68] = '2026-05-29';
   const out = pickTomorrowRows([c], '2026-05-28');
   assert.equal(out.length, 0);
 });

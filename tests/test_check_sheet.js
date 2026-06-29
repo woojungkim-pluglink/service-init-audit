@@ -2,12 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseGvizCsv, judgeSheet, findProjectNameByProjectIds } from '../lib/check_sheet.js';
 
-// A열(0)=프로젝트 URL, E열(4)=프로젝트명, BR열(69)=개시일
+// A열(0)=프로젝트 URL, E열(4)=프로젝트명, BQ열(68)=개시일
 function mkProjRow(projectId, projectName, br) {
   const c = new Array(70).fill('');
   c[0] = `https://connect.pluglink.kr/manage/projects/${projectId}/construction`;
   c[4] = projectName;
-  c[69] = br || '';
+  c[68] = br || '';
   return c;
 }
 
@@ -58,12 +58,12 @@ test('findProjectNameByProjectIds: 매칭 없으면 null', () => {
   assert.equal(findProjectNameByProjectIds([], ['111'], '2026-06-02'), null);
 });
 
-// F열(인덱스 5)=주소, BR열(인덱스 69)=서비스개시일.
+// F열(인덱스 5)=주소, BQ열(인덱스 68)=서비스개시일.
 // 테스트용으로 인덱스 위치까지 채운 wide row 생성 헬퍼.
 function mkRow(addr, br) {
   const cells = new Array(70).fill('');
   cells[5] = addr;
-  cells[69] = br;
+  cells[68] = br;
   return cells;
 }
 
@@ -129,7 +129,7 @@ test('judgeSheet: 시도 약자/풀네임 매칭 (세종특별자치시 ↔ 세�
   const c = new Array(70).fill('');
   c[0] = 'https://connect.pluglink.kr/manage/projects/26702/construction';
   c[5] = '세종 부강면 부강3길 29-11';
-  c[69] = '2026-05-28';
+  c[68] = '2026-05-28';
   const r = judgeSheet([c], '세종특별자치시 부강면 부강3길 29-11', '2026-05-28', ['26702']);
   assert.equal(r.status, 'PASS');
 });
@@ -138,7 +138,7 @@ test('judgeSheet: 시도 약자 — 충북/충남/전북 등', () => {
   const mk = (full) => {
     const c = new Array(70).fill('');
     c[5] = full + ' 어딘가로 1';
-    c[69] = '2026-05-28';
+    c[68] = '2026-05-28';
     return c;
   };
   const rows = [mk('충북'), mk('충남'), mk('전북')];
@@ -148,12 +148,12 @@ test('judgeSheet: 시도 약자 — 충북/충남/전북 등', () => {
   assert.equal(judgeSheet(rows, '전라북도 어딘가로 1', '2026-05-28').status, 'PASS');
 });
 
-// A열(인덱스 0)=프로젝트 URL, F열(5)=주소, BR열(69)=서비스개시일
+// A열(인덱스 0)=프로젝트 URL, F열(5)=주소, BQ열(68)=서비스개시일
 function mkRowP(projectId, addr, br) {
   const cells = new Array(70).fill('');
   cells[0] = `https://connect.pluglink.kr/manage/projects/${projectId}/construction`;
   cells[5] = addr;
-  cells[69] = br;
+  cells[68] = br;
   return cells;
 }
 
