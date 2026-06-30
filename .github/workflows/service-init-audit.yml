@@ -31,6 +31,11 @@ on:
         description: 'morning | evening'
         required: false
         default: 'morning'
+      force:
+        description: '이미 처리된 슬롯도 강제 재실행(중복 방지 가드 무시). 보정 재배포용.'
+        type: boolean
+        required: false
+        default: false
   schedule:                 # 백업(지연 가능) — n8n 실패 시 누락 방지
     - cron: '5 23 * * *'    #  08:05 KST = 23:05 UTC(전날) → morning
     - cron: '5 8 * * *'     #  17:05 KST = 08:05 UTC       → evening
@@ -112,6 +117,6 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: node audit.js --slot=${{ steps.slot.outputs.slot }}
+        run: node audit.js --slot=${{ steps.slot.outputs.slot }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}
 
 # (re-scan trigger)
