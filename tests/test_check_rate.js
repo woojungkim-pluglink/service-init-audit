@@ -133,6 +133,20 @@ test('extractContractTab: 합의서 파일 없으면 false', () => {
   assert.equal(c.specialPrice, '149');
 });
 
+test('extractContractTab: 합의서 슬롯 "-"여도 토탈솔루션계약서 PDF 있으면 인정 (계약서 2페이지 합의서)', () => {
+  // 실제 계약탭 구조: 합의서는 토탈솔루션계약서 PDF에 합쳐 올림 → 합의서 슬롯은 "-"
+  const t = `일반요금제\n플러그링크 공시요금 (324.4원)\n특약요금제\n특가요금 (149원)\n특약요금제 적용기간(일)\n180\n공통서류\n건축물대장\n\n4. 건대_방학신동아3단지.pdf\n\n토탈솔루션계약서\n\n5. 계약서_방학신동아3단지.pdf\n\n합의서\n-\n전기요금고지서\n\n1. 신청서_방학신동아3단지.pdf`;
+  const c = extractContractTab(t);
+  assert.equal(c.hasAgreementFile, true);
+  assert.equal(c.specialPrice, '149');
+  assert.equal(c.specialPeriod, '180');
+});
+
+test('extractContractTab: 토탈솔루션계약서도 "-"면 여전히 false', () => {
+  const t = `특약요금제\n특가요금 (149원)\n특약요금제 적용기간(일)\n180\n토탈솔루션계약서\n-\n합의서\n-`;
+  assert.equal(extractContractTab(t).hasAgreementFile, false);
+});
+
 function failResult(price) {
   return {
     status: 'FAIL',
