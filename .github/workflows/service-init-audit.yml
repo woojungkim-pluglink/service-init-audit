@@ -80,16 +80,22 @@ jobs:
       - name: Seed dashboard history (live 전체 받아 누적 — 과거 파일 유실 방지)
         run: |
           # 러너는 매번 빈 상태로 시작 → 배포 시 폴더에 있는 파일만 라이브에 남는다.
-          # index.json(목록)뿐 아니라 참조하는 과거 데이터 파일도 모두 받아와야
-          # 배포에 포함돼 이력이 보존된다. (안 그러면 최신 1개만 남고 과거는 404)
+          # index.json(목록)뿐 아니라 참조하는 과거 데이터 파일도 모두 받아와야 배포에 포함돼
+          # 이력이 보존된다. seed 실패를 조용히 넘기면(과거엔 `|| true`) 빈 manifest로 배포돼
+          # 90일 이력이 통째로 소실되므로(장애 9), 비-404 실패는 여기서 하드페일한다.
           mkdir -p public/data
           BASE="https://service-init-audit.vercel.app/data"
-          curl -fsS "$BASE/index.json" -o public/data/index.json || true
-          if [ -f public/data/index.json ]; then
-            jq -r '.slots[].file // empty' public/data/index.json 2>/dev/null | while read -r f; do
-              if [ -n "$f" ]; then curl -fsS "$BASE/$f" -o "public/data/$f" || true; fi
+          code=$(curl -sS -o public/data/index.json -w '%{http_code}' "$BASE/index.json" || echo 000)
+          if [ "$code" = "404" ]; then
+            echo "live index.json 없음(최초 배포) — 빈 상태로 시작"; rm -f public/data/index.json
+          elif [ "$code" != "200" ]; then
+            echo "::error::seed 실패: index.json fetch http=$code — 이력 유실 방지 위해 중단(재시도 대기)"; exit 1
+          else
+            miss=0
+            for f in $(jq -r '.slots[].file // empty' public/data/index.json 2>/dev/null); do
+              curl -fsS "$BASE/$f" -o "public/data/$f" || miss=$((miss+1))
             done
-            echo "seeded $(ls public/data/*.json | wc -l) data file(s)"
+            echo "seeded $(ls public/data/*.json 2>/dev/null | wc -l) file(s), $miss missing(404 등)"
           fi
 
       - name: Run audit
@@ -118,5 +124,20 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: node audit.js --slot=${{ steps.slot.outputs.slot }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}
+
+      # 잡이 어떤 단계에서든 실패하면(seed 중단·npm·Playwright·audit FATAL·타임아웃) Slack DM으로 통지.
+      #   '메시지가 안 왔다'를 사람이 눈치채야 하는 침묵 실패를 없앤다(dead-man 방어).
+      - name: Notify on failure (Slack DM)
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          NOTIFY_SLACK_USER_ID: ${{ secrets.NOTIFY_SLACK_USER_ID }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT="🔴 service-init-audit 실행 실패 — slot=${{ steps.slot.outputs.slot }}, event=${{ github.event_name }}. 로그: $RUN_URL"
+          curl -sS -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H 'Content-type: application/json; charset=utf-8' \
+            --data "$(jq -nc --arg c "$NOTIFY_SLACK_USER_ID" --arg t "$TEXT" '{channel:$c, text:$t}')" || true
 
 # (re-scan trigger)

@@ -287,6 +287,11 @@ async function main() {
       ? JSON.parse(readFileSync(manifestPath, 'utf8'))
       : { slots: [] };
     let manifestEntry;
+    // GitHub 백업 cron으로 실행됐는데 dedup에 안 걸리고 여기까지 왔다 = 정시 n8n 트리거가 이 슬롯을
+    //   처리하지 못했다는 신호(장애 2·3 계열). 알림 상단에 경고를 노출해 능동 감지 가능하게 한다.
+    const backupWarn = process.env.GITHUB_EVENT_NAME === 'schedule'
+      ? '⚠️ 정시 n8n 트리거 미작동(또는 정시 실행 중도 실패) — GitHub 백업 cron으로 실행됨. n8n 발행상태·PAT 확인 필요.'
+      : '';
 
     if (hasContent) {
       const out = {
@@ -307,8 +312,9 @@ async function main() {
 
       // notify — DM + 채널(설정 시). 본문 Block Kit(가시성), text는 알림 fallback.
       const notifyArgs = { date, slot, summary, stations, tomorrowStations, tomorrowSummary, dashboardUrl };
-      const notifyText = buildSummaryText(notifyArgs);
+      const notifyText = (backupWarn ? backupWarn + '\n\n' : '') + buildSummaryText(notifyArgs);
       const notifyBlocks = buildSummaryBlocks(notifyArgs);
+      if (backupWarn) notifyBlocks.unshift({ type: 'section', text: { type: 'mrkdwn', text: `*${backupWarn}*` } });
       await sendDM({
         token: process.env.SLACK_BOT_TOKEN,
         userId: process.env.NOTIFY_SLACK_USER_ID,
@@ -335,7 +341,7 @@ async function main() {
       await sendDM({
         token: process.env.SLACK_BOT_TOKEN,
         userId: process.env.NOTIFY_SLACK_USER_ID,
-        text: `🔌 서비스개시 검증 — ${date} ${slotKo}\n오늘 서비스개시 충전소가 없습니다. (검증 대상 없음)`,
+        text: `${backupWarn ? backupWarn + '\n\n' : ''}🔌 서비스개시 검증 — ${date} ${slotKo}\n오늘 서비스개시 충전소가 없습니다. (검증 대상 없음)`,
         dryRun
       });
       manifestEntry = { date, slot, empty: true, summary: { totalStations: 0 } };
@@ -352,7 +358,19 @@ async function main() {
         const tokenArg = process.env.VERCEL_TOKEN ? ` --token=${process.env.VERCEL_TOKEN}` : '';
         execSync(`npx vercel deploy --prod --yes${tokenArg}`, { cwd: __dirname, stdio: 'inherit' });
       } catch (e) {
-        console.error('[audit] Vercel 배포 실패 (로컬 JSON은 보존됨):', e?.message ?? String(e));
+        // 배포 실패를 조용히 넘기지 않는다: 대시보드 정체 + dedup 마커 미게시(→ 백업 cron 중복 발송) 유발.
+        const tok = process.env.VERCEL_TOKEN;
+        const msg = tok ? String(e?.message ?? e).split(tok).join('***') : String(e?.message ?? e); // 토큰 평문 노출 방지
+        console.error('[audit] Vercel 배포 실패:', msg);
+        try {
+          await sendDM({
+            token: process.env.SLACK_BOT_TOKEN,
+            userId: process.env.NOTIFY_SLACK_USER_ID,
+            text: `⚠️ [${date} ${slot}] 대시보드 배포 실패 — 대시보드 미갱신. VERCEL_TOKEN·네트워크 확인 필요. (검증 결과 자체는 정상 산출·발송됨; dedup 마커 미게시로 백업 cron이 중복 발송할 수 있음)`,
+            dryRun: false
+          });
+        } catch { /* DM 실패는 무시 — exitCode로 워크플로가 붉게 표시됨 */ }
+        process.exitCode = 1;
       }
     }
   } finally {
