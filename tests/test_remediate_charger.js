@@ -1,10 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickRemediationTargets } from '../lib/remediate_charger.js';
+import { pickRemediationTargets, remediateStation } from '../lib/remediate_charger.js';
 
 // 기준시각: 2026-06-01 09:00:00 KST = UTC 00:00
 const REF = Date.UTC(2026, 5, 1, 0, 0, 0);
 const c = (chargerId, deviceStatus, lastComm) => ({ chargerId, deviceId: 'PL' + chargerId, deviceStatus, lastCommunication: lastComm });
+
+test('remediateStation: newChargers만 대상 — 기존(기축) chargers는 조치하지 않음 (H3)', async () => {
+  const target = c('1', '미운영', '2026-06-01 08:30:00'); // 30분 전, 미운영 → 조치 대상 조건 충족
+  // 기존 chargers엔 대상이 있어도 newChargers가 비면 조치 0건
+  const r1 = await remediateStation({ plinkconnectBase: 'x' },
+    { stationId: '10000001', chargers: [target], newChargers: [] },
+    { dryRun: true, referenceEpochMs: REF });
+  assert.equal(r1.targets, 0);
+  // 오늘 개시된 신규 충전기에 있으면 조치(dryRun)
+  const r2 = await remediateStation({ plinkconnectBase: 'x' },
+    { stationId: '10000001', newChargers: [target] },
+    { dryRun: true, referenceEpochMs: REF });
+  assert.equal(r2.targets, 1);
+  assert.equal(r2.results[0].dryRun, true);
+});
 
 test('pickRemediationTargets: 미운영 + 최근(1시간 이내) 통신 → 대상', () => {
   const out = pickRemediationTargets([
