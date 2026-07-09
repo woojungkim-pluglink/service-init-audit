@@ -22,6 +22,7 @@ import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
 import { upsertManifest, slotAlreadyDone } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
 import { buildGoogleAuth, makeSheetsCsvFetcher } from './lib/google_auth.js';
+import { checkYeongchaShape } from './lib/sheet_guard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, 'config', '.env') });
@@ -165,6 +166,22 @@ async function main() {
         yeongchaRows = await loadYeongchaRows(ctx.fetchSheetCsv);
       } catch (e) {
         console.warn('[exclude] 영차영차 시트 로드 실패 — projectId 기준 [HM] 판정 생략:', e?.message ?? String(e));
+      }
+    }
+
+    // 3.6 시트 컬럼 이동 가드 — 개시일/주소 컬럼의 값 형태가 무너졌으면(장애 5·7 재발) 오탐 대신 즉시 중단.
+    if (yeongchaRows) {
+      const shape = checkYeongchaShape(yeongchaRows);
+      if (!shape.ok) {
+        console.error('[guard] 영차영차 시트 구조 이상:', shape.reason, JSON.stringify(shape.stats));
+        await sendDM({
+          token: process.env.SLACK_BOT_TOKEN,
+          userId: process.env.NOTIFY_SLACK_USER_ID,
+          text: `🔴 [${date} ${slot}] 영차영차new 시트 컬럼 구조 변경 의심 — 검증 중단(오탐 방지).\n${shape.reason}\n→ check_sheet.js/discover_tomorrow.js/sheet_guard.js의 컬럼 인덱스(주소 F=5, 개시일 BQ=68) 확인·수정 필요.`,
+          dryRun
+        });
+        process.exitCode = 2;
+        return;
       }
     }
 
