@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchEmails, subtractDays, nameVariants } from '../lib/check_doc.js';
+import { matchEmails, subtractDays, nameVariants, maskEmail } from '../lib/check_doc.js';
 import { readFileSync } from 'node:fs';
 
 const { threads } = JSON.parse(readFileSync(new URL('./fixtures/gmail_threads.json', import.meta.url)));
@@ -47,6 +47,27 @@ test('matchEmails: PASS 시 gmailUrl이 threadId 사용', () => {
 
 test('subtractDays: 30일 빼기', () => {
   assert.equal(subtractDays('2026-05-22', 30), '2026-04-22');
+});
+
+test('maskEmail: 로컬파트 앞 2자만 남김', () => {
+  assert.equal(maskEmail('daeyeol.yang@pluglink.kr'), 'da***@pluglink.kr');
+  assert.equal(maskEmail('"PM팀" <pm@pluglink.kr>'), 'pm***@pluglink.kr');
+  assert.equal(maskEmail(''), '');
+});
+
+test('matchEmails: PASS 증거에 외부 to/cc 미포함 + from 마스킹 (공개 대시보드 PII 최소화)', () => {
+  const t = [{
+    id: '1', threadId: 't1', subject: '[플러그링크] OO아파트 서비스개시',
+    from: 'daeyeol.yang@pluglink.kr', to: ['customer@daum.net'], cc: ['"PM팀" <pm@pluglink.kr>'],
+    date: '2026-07-01', snippet: 'OO아파트 개시'
+  }];
+  const r = matchEmails(t, { keywords: ['OO아파트'], pmEmails: ['daeyeol.yang@pluglink.kr'], myEmail: 'woojung.kim@pluglink.kr', groupEmails: ['pm@pluglink.kr'] });
+  assert.equal(r.status, 'PASS');
+  const m = r.evidence.matchedEmails[0];
+  assert.equal(m.to, undefined);
+  assert.equal(m.cc, undefined);
+  assert.equal(m.from, 'da***@pluglink.kr');
+  assert.ok(!JSON.stringify(r.evidence).includes('customer@daum.net'), '외부 고객 이메일이 evidence에 없어야 함');
 });
 
 test('nameVariants: 차수 위치/건물접미사 표기차 흡수 (실제 6/17 사례)', () => {

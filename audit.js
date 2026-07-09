@@ -29,6 +29,15 @@ const args = parseArgs(process.argv.slice(2));
 const RETENTION_DAYS = Number(process.env.DATA_RETENTION_DAYS || 90);
 const PLINKCONNECT_BASE = process.env.PLINKCONNECT_BASE || 'https://connect.pluglink.kr';
 
+/** errors[] 엔트리를 공개 대시보드용으로 정리 — 스택·내부 URL 제거, 첫 줄만, 길이 제한 */
+function sanitizeError(e) {
+  const clean = (s) => String(s ?? '')
+    .split('\n')[0]
+    .replace(/https?:\/\/[^\s)"']+/g, '[url]')
+    .slice(0, 160);
+  return e && typeof e === 'object' ? { ...e, error: clean(e.error) } : clean(e);
+}
+
 async function main() {
   const slot = args.slot;
   if (!['morning', 'evening'].includes(slot)) throw new Error('--slot must be morning|evening');
@@ -289,7 +298,7 @@ async function main() {
         }))),
         stations, summary,
         tomorrowStations, tomorrowSummary,
-        errors
+        errors: errors.map(sanitizeError)
       };
       const outFile = path.join(dataDir, `${date}-${slot}.json`);
       writeFileSync(outFile, JSON.stringify(out, null, 2));
