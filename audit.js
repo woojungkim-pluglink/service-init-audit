@@ -17,6 +17,7 @@ import { fetchStationData, filterNewChargers } from './lib/enrich_station.js';
 import { checkDoc } from './lib/check_doc.js';
 import { checkRate } from './lib/check_rate.js';
 import { checkStatus } from './lib/check_status.js';
+import { judgeInitDate } from './lib/check_initdate.js';
 import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib/check_sheet.js';
 import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
 import { upsertManifest, slotAlreadyDone } from './lib/manifest.js';
@@ -201,9 +202,11 @@ async function main() {
           console.log(`  [exclude] [HM] 프로젝트 제외: ${s.stationName ?? s.stationId} (${pnForHm})`);
           continue;
         }
-        s.checks.doc    = await safeRun('doc',    () => checkDoc(s, ctx),    errors, s);
-        s.checks.rate   = await safeRun('rate',   () => checkRate(s, ctx),   errors, s);
-        s.checks.status = await safeRun('status', () => checkStatus(s, ctx), errors, s);
+        s.checks.doc     = await safeRun('doc',     () => checkDoc(s, ctx),    errors, s);
+        s.checks.rate    = await safeRun('rate',    () => checkRate(s, ctx),   errors, s);
+        s.checks.status  = await safeRun('status',  () => checkStatus(s, ctx), errors, s);
+        // 서비스개시일자(충전기 테이블 맨 우측 열) 공란 충전기 탐지 — 순수 계산(I/O 없음).
+        s.checks.initdate = judgeInitDate(s);
         s.overall = computeOverall(s.checks);
       } catch (e) {
         if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') {
@@ -441,7 +444,7 @@ function computeTomorrowSummary(previews, dates) {
 
 function computeSummary(stations) {
   const byOverall = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
-  const byCheck = { doc: {}, rate: {}, status: {}, sheet: {} };
+  const byCheck = { doc: {}, rate: {}, status: {}, sheet: {}, initdate: {} };
   for (const k of Object.keys(byCheck)) byCheck[k] = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
   for (const s of stations) {
     byOverall[s.overall] = (byOverall[s.overall] || 0) + 1;
