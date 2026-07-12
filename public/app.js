@@ -162,7 +162,7 @@ function renderSummary() {
   const totals = both.reduce((acc, d) => {
     acc.totalStations += (d.summary.totalStations ?? d.summary.totalProjects ?? 0);
     for (const k of ['PASS', 'WARN', 'FAIL', 'SKIP']) acc.byOverall[k] += d.summary.byOverall[k] || 0;
-    for (const ck of ['doc', 'rate', 'status', 'sheet', 'initdate']) {
+    for (const ck of ['doc', 'rate', 'status', 'sheet', 'initdate', 'comm']) {
       acc.byCheck[ck] = acc.byCheck[ck] || { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
       for (const st of ['PASS', 'WARN', 'FAIL', 'SKIP']) {
         acc.byCheck[ck][st] += d.summary.byCheck[ck]?.[st] || 0;
@@ -171,7 +171,7 @@ function renderSummary() {
     return acc;
   }, { totalStations: 0, byOverall: { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 }, byCheck: {} });
 
-  const checkLabels = { doc: '공문', rate: '요금제', status: '상태', sheet: '시트', initdate: '개시일자' };
+  const checkLabels = { doc: '공문', rate: '요금제', status: '상태', sheet: '시트', initdate: '개시일자', comm: '통신' };
   document.getElementById('summary').innerHTML = `
     총 ${totals.totalStations}건 · PASS ${totals.byOverall.PASS} · WARN ${totals.byOverall.WARN} · FAIL ${totals.byOverall.FAIL}
     <br>${Object.keys(checkLabels).map(k => `${checkLabels[k]} ${totals.byCheck[k]?.PASS || 0}/${totals.totalStations}`).join(' · ')}

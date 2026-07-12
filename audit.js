@@ -18,6 +18,7 @@ import { checkDoc } from './lib/check_doc.js';
 import { checkRate } from './lib/check_rate.js';
 import { checkStatus } from './lib/check_status.js';
 import { judgeInitDate } from './lib/check_initdate.js';
+import { judgeCommStatus } from './lib/check_commstatus.js';
 import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib/check_sheet.js';
 import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
 import { upsertManifest, slotAlreadyDone } from './lib/manifest.js';
@@ -207,6 +208,8 @@ async function main() {
         s.checks.status  = await safeRun('status',  () => checkStatus(s, ctx), errors, s);
         // 서비스개시일자(충전기 테이블 맨 우측 열) 공란 충전기 탐지 — 순수 계산(I/O 없음).
         s.checks.initdate = judgeInitDate(s);
+        // 커넥터 상태 '통신미연결' 충전기 탐지 — 순수 계산(I/O 없음).
+        s.checks.comm = judgeCommStatus(s);
         s.overall = computeOverall(s.checks);
       } catch (e) {
         if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') {
@@ -444,7 +447,7 @@ function computeTomorrowSummary(previews, dates) {
 
 function computeSummary(stations) {
   const byOverall = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
-  const byCheck = { doc: {}, rate: {}, status: {}, sheet: {}, initdate: {} };
+  const byCheck = { doc: {}, rate: {}, status: {}, sheet: {}, initdate: {}, comm: {} };
   for (const k of Object.keys(byCheck)) byCheck[k] = { PASS: 0, WARN: 0, FAIL: 0, SKIP: 0 };
   for (const s of stations) {
     byOverall[s.overall] = (byOverall[s.overall] || 0) + 1;
