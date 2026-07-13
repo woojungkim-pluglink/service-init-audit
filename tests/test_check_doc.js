@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchEmails, subtractDays, nameVariants, maskEmail } from '../lib/check_doc.js';
+import { matchEmails, subtractDays, nameVariants, maskEmail, longestCommonSubstringLen } from '../lib/check_doc.js';
 import { readFileSync } from 'node:fs';
 
 const { threads } = JSON.parse(readFileSync(new URL('./fixtures/gmail_threads.json', import.meta.url)));
@@ -47,6 +47,33 @@ test('matchEmails: PASS 시 gmailUrl이 threadId 사용', () => {
 
 test('subtractDays: 30일 빼기', () => {
   assert.equal(subtractDays('2026-05-22', 30), '2026-04-22');
+});
+
+test('longestCommonSubstringLen: 최장 공통 부분문자열 길이', () => {
+  assert.equal(longestCommonSubstringLen('김포힐스테이트리버시티1단지', '플러그링크 힐스테이트리버시티 입주자'), 9);
+  assert.equal(longestCommonSubstringLen('abc', 'xyz'), 0);
+  assert.equal(longestCommonSubstringLen('', 'x'), 0);
+});
+
+test('matchEmails: 지역명/단지번호 생략 제목도 LCS로 PASS (김포힐스테이트 실사례 — 김충근 발송)', () => {
+  const t = [{
+    id: '1', threadId: 'k1', from: 'chunggeun.kim@pluglink.kr',
+    subject: '[플러그링크] 힐스테이트리버시티 입주자대표회의 서비스 개시 안내',
+    to: ['x@daum.net'], cc: ['"PM팀" <pm@pluglink.kr>'], date: '2026-07-10', snippet: '개시 안내'
+  }];
+  const keywords = ['김포힐스테이트리버시티1단지', '김포힐스테이트리버시티1', '경기 김포시 고촌읍'];
+  const r = matchEmails(t, { keywords, pmEmails: ['chunggeun.kim@pluglink.kr'], myEmail: 'woojung.kim@pluglink.kr', groupEmails: ['pm@pluglink.kr'] });
+  assert.equal(r.status, 'PASS');
+});
+
+test('matchEmails: LCS로도 무관한 제목은 매칭 안 됨(오탐 방지)', () => {
+  const t = [{
+    id: '1', threadId: 'z1', from: 'chunggeun.kim@pluglink.kr',
+    subject: '[플러그링크] 세종아파트 서비스 개시 안내', to: [], cc: ['pm@pluglink.kr'], date: '2026-07-10', snippet: ''
+  }];
+  const keywords = ['김포힐스테이트리버시티1단지', '경기 김포시 고촌읍'];
+  const r = matchEmails(t, { keywords, pmEmails: ['chunggeun.kim@pluglink.kr'], myEmail: 'woojung.kim@pluglink.kr', groupEmails: ['pm@pluglink.kr'] });
+  assert.equal(r.status, 'FAIL');
 });
 
 test('maskEmail: 로컬파트 앞 2자만 남김', () => {
