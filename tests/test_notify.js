@@ -29,6 +29,21 @@ test('buildSummaryBlocks: 유효한 Block Kit 구조 + FAIL/대시보드 포함'
   for (const b of blocks) if (b.type==='section' && b.text) assert.ok(b.text.text.length <= 3000);
 });
 
+test('충전기 현황(기축+개시=총) 섹션 — text/blocks 모두', () => {
+  const args = {
+    date: '2026-07-13', slot: 'morning',
+    summary: { totalStations: 1, byOverall: { PASS: 1 }, byCheck: {} },
+    stations: [{ stationName: '김포힐스테이트', overall: 'PASS', checks: {}, chargerCounts: { existing: 32, opened: 42, total: 74 } }],
+    dashboardUrl: 'https://x.app'
+  };
+  const text = buildSummaryText(args);
+  assert.match(text, /충전기 현황/);
+  assert.match(text, /김포힐스테이트: 기축 32 \+ 개시 42 = 총 74대/);
+  const json = JSON.stringify(buildSummaryBlocks(args));
+  assert.match(json, /충전기 현황/);
+  assert.match(json, /기축 32 \+ 개시 42 = \*총 74대\*/);
+});
+
 test('buildSummaryText: FAIL 건 나열 (stations 키)', () => {
   const text = buildSummaryText({
     date: '2026-05-22', slot: 'evening',

@@ -193,13 +193,16 @@ function renderSlot(slot, title) {
 }
 
 function renderCard(s) {
-  const labels = { doc: '📭 공문', rate: '💰 요금제', status: '⚙️ 상태', sheet: '📊 시트' };
+  const labels = { doc: '📭 공문', rate: '💰 요금제', status: '⚙️ 상태', sheet: '📊 시트', initdate: '📅 개시일자', comm: '📡 통신' };
   const checks = Object.entries(s.checks || {}).map(([k, c]) =>
-    `<span class="${c.status.toLowerCase()}">${labels[k]} ${c.status}</span>`
+    `<span class="${c.status.toLowerCase()}">${labels[k] ?? k} ${c.status}</span>`
   ).join('');
   const name = s.stationName ?? s.projectName ?? s.stationId ?? '(no name)';
-  const total = s.totalChargers ?? s.chargerCount ?? '?';
-  const newCount = (s.newChargers || []).length;
+  const cc = s.chargerCounts;
+  // 충전기 현황: 기축(기존) + 개시(오늘) = 총. (구버전 데이터 호환 fallback)
+  const countMeta = cc
+    ? `충전기 기축 ${cc.existing} + 개시 ${cc.opened} = 총 ${cc.total}기`
+    : `총 ${escapeHtml(String(s.totalChargers ?? (s.chargers || []).length))}기 · 신규 ${(s.newChargers || []).length}기`;
   const addr = s.address ? ` · ${escapeHtml(s.address)}` : '';
   const pids = (s.projectIds && s.projectIds.length) ? `프로젝트 ${escapeHtml(s.projectIds.join(', '))} · ` : '';
   const stid = s.stationId ? `충전소 ${escapeHtml(s.stationId)} · ` : '';
@@ -207,7 +210,7 @@ function renderCard(s) {
   return `
     <div class="card ${(s.overall || 'skip').toLowerCase()}">
       <div><b>[${s.overall ?? 'SKIP'}]</b> ${escapeHtml(name)}${addr}${link}</div>
-      <div class="meta">${pids}${stid}총 ${escapeHtml(String(total))}기 · 신규 ${newCount}기 · 개시일 ${escapeHtml(s.initiatedAt ?? '?')}</div>
+      <div class="meta">${pids}${stid}${countMeta} · 개시일 ${escapeHtml(s.initiatedAt ?? '?')}</div>
       <div class="checks">${checks}</div>
       <div class="evidence">
         ${Object.entries(s.checks || {}).map(([k, c]) =>

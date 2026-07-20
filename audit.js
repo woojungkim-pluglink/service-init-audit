@@ -159,6 +159,12 @@ async function main() {
         }
       }
       console.log(`[enrich] ${stations.length - errors.filter(e => e.stage === 'enrich').length} OK, ${errors.filter(e => e.stage === 'enrich').length} 실패`);
+      // 충전기 대수 현황: 기축(기존) + 개시(오늘) = 총. 알림 하단·대시보드 노출용.
+      for (const s of stations) {
+        const total = (s.chargers || []).length;
+        const opened = (s.newChargers || []).length;
+        s.chargerCounts = { total, opened, existing: Math.max(0, total - opened) };
+      }
     }
 
     // [HM] 제외 판정용 영차영차new 시트 1회 로드 (projectId 기준 — 주소 매칭 실패에도 견고).
