@@ -206,8 +206,8 @@ async function main() {
         s.checks.doc     = await safeRun('doc',     () => checkDoc(s, ctx),    errors, s);
         s.checks.rate    = await safeRun('rate',    () => checkRate(s, ctx),   errors, s);
         s.checks.status  = await safeRun('status',  () => checkStatus(s, ctx), errors, s);
-        // 서비스개시일자(충전기 테이블 맨 우측 열) 공란 충전기 탐지 — 순수 계산(I/O 없음).
-        s.checks.initdate = judgeInitDate(s);
+        // 서비스개시일자(충전기 테이블 맨 우측 열) 검증 — 공란·형식오류·미래날짜(순수 계산).
+        s.checks.initdate = judgeInitDate(s, date);
         // 커넥터 상태 '통신미연결' 충전기 탐지 — 순수 계산(I/O 없음).
         s.checks.comm = judgeCommStatus(s);
         s.overall = computeOverall(s.checks);
