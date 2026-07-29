@@ -29,3 +29,29 @@ test('judgeStatus: SKIP — 빈 입력', () => {
   assert.equal(judgeStatus(null).status, 'SKIP');
   assert.equal(judgeStatus(undefined).status, 'SKIP');
 });
+
+test('judgeStatus: 충전소 상태 미운영 — 충전기 전부 정상이어도 WARN (3원 전이 누락)', () => {
+  const r = judgeStatus([ok], '미운영');
+  assert.equal(r.status, 'WARN');
+  assert.equal(r.evidence.stationStatus, '미운영');
+  assert.match(r.message, /충전소 상태=미운영.*operateStation/);
+});
+
+test('judgeStatus: 충전소 상태 운영이면 기존 판정 유지', () => {
+  const r = judgeStatus([ok], '운영');
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.stationStatus, '운영');
+  assert.doesNotMatch(r.message, /충전소 상태/);
+});
+
+test('judgeStatus: 충전기 FAIL + 충전소 미운영 → FAIL 유지(강등 아님)', () => {
+  const r = judgeStatus([bad, dead], '미운영');
+  assert.equal(r.status, 'FAIL');
+  assert.match(r.message, /충전소 상태=미운영/);
+});
+
+test('judgeStatus: stationStatus 미상(null)이면 기존 동작 그대로', () => {
+  const r = judgeStatus([ok], null);
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.stationStatus, undefined);
+});

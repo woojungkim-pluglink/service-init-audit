@@ -25,6 +25,20 @@ test('extractStationMeta: stationName 추출', () => {
   assert.equal(m.stationName, '세원한아름아파트');
 });
 
+test('extractStationMeta: 충전소 상태 추출 (기본정보 블록 1차 + 헤더 배지 교차)', () => {
+  const m = extractStationMeta(text);
+  assert.equal(m.stationStatus, '운영');
+  assert.equal(m.stationStatusConflict, false);
+});
+
+test('extractStationMeta: 헤더 배지와 기본정보 상태 불일치 → conflict (렌더 레이스 감지)', () => {
+  const t = '충전소 상세 미운영 화성아파트 경기 화성시 어딘가로 1 충전기 수 5 최근 30일\n충전소 ID 10000001 위치 프로젝트 ID 123 충전소 상태 운영 건물구분';
+  const m = extractStationMeta(t);
+  assert.equal(m.stationStatus, '운영'); // 기본정보 블록이 1차 소스
+  assert.equal(m.stationStatusConflict, true);
+  assert.equal(isStationMetaComplete(m), false); // conflict면 미완료 → 폴링 계속
+});
+
 test('isStationMetaComplete: 메타 블록 렌더 완료 판정', () => {
   // 완전 렌더 (실제 station_page_text 파싱 결과와 동일 형태)
   assert.equal(isStationMetaComplete({ address: '경기 시흥시 역전로 375-8', projectIds: ['26647', '26431'] }), true);

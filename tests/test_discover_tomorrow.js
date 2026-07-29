@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { nextDay, nextTargetDates, pickTomorrowRows } from '../lib/discover_tomorrow.js';
+import { nextDay, nextTargetDates, pickTomorrowRows, pickRowsForDates } from '../lib/discover_tomorrow.js';
 
 function mkRow(projectId, addr, br) {
   const c = new Array(70).fill('');
@@ -69,6 +69,18 @@ test('pickTomorrowRows: 프로젝트명에 [HM] 있으면 제외', () => {
   const out = pickTomorrowRows(rows, '2026-05-28');
   assert.equal(out.length, 1);
   assert.equal(out[0].projectId, '200');
+});
+
+test('pickRowsForDates: 지정 날짜(오늘) 행만 추출 — 오늘개시 교차검증용, [HM] 제외', () => {
+  const rows = [
+    mkRow('100', '서울 ...', '2026-07-29'),
+    mkRow('200', '경기 ...', '2026-07-30'),
+    (() => { const c = mkRow('300', '부산 ...', '2026-07-29'); c[4] = '[HM]한화프로젝트_1차'; return c; })()
+  ];
+  const out = pickRowsForDates(rows, ['2026-07-29']);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].projectId, '100');
+  assert.equal(out[0].initiatedAt, '2026-07-29');
 });
 
 test('pickTomorrowRows: A열 URL이 깨졌으면 제외', () => {

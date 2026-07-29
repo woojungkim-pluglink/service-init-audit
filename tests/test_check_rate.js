@@ -91,6 +91,31 @@ test('judgeRate: 충전기 여러 요금제, 모두 매칭', () => {
   assert.equal(r.status, 'PASS');
 });
 
+// ── 온톨로지 대조 개선: 계약정보 공란·파트너 요금·기본요금 공백 정규화 ──
+
+test('judgeRate: 시트 계약정보 전부 공란 → FAIL이 아니라 SKIP(CONTRACT_BLANK)', () => {
+  const rows = [mkRow('27182', '', '', '')];
+  const station = { projectIds: ['27182'], newChargers: [charger('플러그링크 공시요금 (324.4원)')] };
+  const r = judgeRate(station, rows);
+  assert.equal(r.status, 'SKIP');
+  assert.equal(r.evidence.reason, 'CONTRACT_BLANK');
+  assert.equal(r.evidence.appliedRates[0].matched, false); // 계약탭 reconcile 입력용
+});
+
+test('judgeRate: 파트너(한화모티브) 요금 적용 → SKIP(PARTNER_FEE) — FAIL 오탐 방지', () => {
+  const rows = [mkRow('22540', '', '', '')];
+  const station = { projectIds: ['22540'], newChargers: [charger('한화모티브 완속 (283원)')] };
+  const r = judgeRate(station, rows);
+  assert.equal(r.status, 'SKIP');
+  assert.equal(r.evidence.reason, 'PARTNER_FEE');
+});
+
+test('judgeRate: "플러그링크 기본 요금"(띄어쓰기)도 기본요금 계열 인식', () => {
+  const rows = [mkRow('813', '공동주택 고압', '미적용', '0')];
+  const station = { projectIds: ['813'], newChargers: [charger('플러그링크 기본 요금')] };
+  assert.equal(judgeRate(station, rows).status, 'PASS');
+});
+
 // ── 계약탭 2차 확인 (영업관리 시트 오기재 산정) ──
 
 const CONTRACT_TEXT_149 = `계약 결과
@@ -187,6 +212,59 @@ test('reconcileWithContract: 계약탭 가격도 불일치 → FAIL 유지', () 
 test('reconcileWithContract: 계약탭 fetch 실패(에러)만 있으면 FAIL 유지', () => {
   const r = reconcileWithContract(failResult(149), { projectIds: ['24446'] }, [
     { projectId: '24446', error: 'timeout' }
+  ]);
+  assert.equal(r.status, 'FAIL');
+});
+
+// ── CONTRACT_BLANK 베이스의 계약탭 재조정 ──
+
+function blankResult(price, rate) {
+  return {
+    status: 'SKIP',
+    evidence: {
+      reason: 'CONTRACT_BLANK',
+      contracts: [{ projectId: 'x', basicRate: '', specialRate: '', specialPeriod: '', hasSpecial: false, expectedPrice: null }],
+      appliedRates: [{ rate, price: String(price), matched: false }]
+    },
+    message: '영업관리 시트 계약정보 공란 — 계약탭 2차 확인 필요'
+  };
+}
+
+test('reconcile(공란): 계약탭 일반요금제 일치 → PASS(CONTRACT_TAB_GENERAL) — 실측 오탐 12건 케이스', () => {
+  const r = reconcileWithContract(blankResult('324.4', '플러그링크 공시요금 (324.4원)'), { projectIds: ['27182'] }, [
+    { projectId: '27182', specialPrice: null, specialPeriod: '0', generalRate: '플러그링크 공시요금 (324.4원)', hasAgreementFile: false, loaded: true }
+  ]);
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.reconciledBy, 'CONTRACT_TAB_GENERAL');
+});
+
+test('reconcile(공란): 계약탭에 활성 특약이 있는데 충전기 요금 불일치 → FAIL (일반요금 구제 금지)', () => {
+  const r = reconcileWithContract(blankResult('283', '어떤요금 (283원)'), { projectIds: ['1'] }, [
+    { projectId: '1', specialPrice: '149', specialPeriod: '180', generalRate: '플러그링크 공시요금 (324.4원)', hasAgreementFile: true, loaded: true }
+  ]);
+  assert.equal(r.status, 'FAIL');
+});
+
+test('reconcile(공란): 계약탭 미로드/에러 → SKIP 유지(확인 불가)', () => {
+  const r = reconcileWithContract(blankResult('324.4', '플러그링크 공시요금 (324.4원)'), { projectIds: ['1'] }, [
+    { projectId: '1', error: 'timeout' }
+  ]);
+  assert.equal(r.status, 'SKIP');
+  assert.equal(r.evidence.reconciledBy, 'CONTRACT_BLANK');
+});
+
+test('reconcile: 시트가 특약 계약인데 충전기 공시요금 — 계약탭 일반요금 일치로 구제 안 됨(진짜 오적용 보존)', () => {
+  // 2026-07-01 실제 양성 케이스: 시트 특약 149원, 충전기 공시요금 324.4원
+  const base = {
+    status: 'FAIL',
+    evidence: {
+      contracts: [{ projectId: '26762', basicRate: '공동주택 저압', specialRate: '공동주택 특가요금(149원)', specialPeriod: '180', hasSpecial: true, expectedPrice: '149' }],
+      appliedRates: [{ rate: '플러그링크 공시요금 (324.4원)', price: '324.4', matched: false }]
+    },
+    message: '계약 불일치: 플러그링크 공시요금 (324.4원)'
+  };
+  const r = reconcileWithContract(base, { projectIds: ['26762'] }, [
+    { projectId: '26762', specialPrice: '149', specialPeriod: '180', generalRate: '플러그링크 공시요금 (324.4원)', hasAgreementFile: true, loaded: true }
   ]);
   assert.equal(r.status, 'FAIL');
 });

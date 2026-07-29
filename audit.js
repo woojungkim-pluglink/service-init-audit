@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
 import { discoverStations } from './lib/discover.js';
-import { discoverTomorrowStations, nextTargetDates } from './lib/discover_tomorrow.js';
+import { discoverTomorrowStations, nextTargetDates, pickRowsForDates } from './lib/discover_tomorrow.js';
 import { resolveStationIdByProjectId } from './lib/resolve_station_id.js';
 import { checkStatusRecent } from './lib/check_status_recent.js';
 import { isExcludedProject } from './lib/project_filter.js';
@@ -82,13 +82,23 @@ async function main() {
     });
     console.log(`[discover] ${stations.length} stations found`);
   } catch (e) {
-    const slackErr = /slack history failed: (.+)/.exec(e?.message ?? '')?.[1];
-    if (slackErr === 'not_in_channel' || slackErr === 'channel_not_found') {
-      console.warn(`[discover] ⚠️ ${slackErr} — 봇을 채널 ${process.env.SLACK_CHANNEL_ID}에 초대해야 메시지를 읽을 수 있습니다. 이번 슬롯은 0건으로 진행.`);
-      stations = [];
-    } else {
-      throw e;
+    // 접근권한 문제는 '개시 0건'과 다르다 — 조용히 0건으로 강등하면 장애가 정상으로 위장된다.
+    //   WebClient는 PlatformError(e.data.error)로 던지므로 두 형태 모두 인식.
+    const code = e?.data?.error
+      || /slack history failed: (.+)/.exec(e?.message ?? '')?.[1]
+      || /An API error occurred:\s*(\w+)/.exec(e?.message ?? '')?.[1];
+    if (code === 'not_in_channel' || code === 'channel_not_found') {
+      console.error(`[discover] 🔴 ${code} — 봇이 채널 ${process.env.SLACK_CHANNEL_ID}를 읽지 못함`);
+      await sendDM({
+        token: process.env.SLACK_BOT_TOKEN,
+        userId: process.env.NOTIFY_SLACK_USER_ID,
+        text: `🔴 [${date} ${slot}] 서비스개시 채널을 읽지 못함(${code}) — 봇 초대/채널ID 확인 필요. 검증 미수행.`,
+        dryRun
+      });
+      process.exitCode = 2;
+      return;
     }
+    throw e;
   }
 
   // 2. session/context — 비싼 세션은 필요할 때만.
@@ -140,6 +150,8 @@ async function main() {
             s.stationName = data.stationName ?? s.stationName;
             s.address = data.address ?? null;
             s.projectIds = data.projectIds ?? [];
+            // 충전소 상태(운영/미운영/폐쇄) — charger+station 3원 전이 누락 감지용
+            s.stationStatus = data.stationStatusConflict ? null : (data.stationStatus ?? null);
             s.chargers = data.chargers ?? [];
             // stationId는 슬랙이 ground-truth (URL에서 추출) — 덮어쓰지 않음
             s.newChargers = filterNewChargers(s.chargers, date);
@@ -167,13 +179,22 @@ async function main() {
       }
     }
 
-    // [HM] 제외 판정용 영차영차new 시트 1회 로드 (projectId 기준 — 주소 매칭 실패에도 견고).
+    // 영차영차new 시트 1회 로드 — [HM] 판정(projectId 기준) + 오늘 개시 교차검증 공용.
+    //   개시 0건인 날도 교차검증을 위해 로드한다: SA 모드는 브라우저 세션 없이 Sheets API로 가능.
     let yeongchaRows = null;
-    if (ctx && stations.length) {
+    let yeongchaLoadFailed = false;
+    {
       try {
-        yeongchaRows = await loadYeongchaRows(ctx.fetchSheetCsv);
+        let fetcher = ctx?.fetchSheetCsv ?? null;
+        if (!fetcher) {
+          const g = buildGoogleAuth();
+          if (g.sheetsMode === 'sa') fetcher = makeSheetsCsvFetcher(g.sheetsAuth);
+        }
+        if (fetcher) yeongchaRows = await loadYeongchaRows(fetcher);
+        else console.warn('[sheet] 시트 fetcher 없음(브라우저 세션·SA 모두 없음) — [HM] 판정·오늘개시 교차검증 생략');
       } catch (e) {
-        console.warn('[exclude] 영차영차 시트 로드 실패 — projectId 기준 [HM] 판정 생략:', e?.message ?? String(e));
+        yeongchaLoadFailed = true;
+        console.warn('[sheet] 영차영차 시트 로드 실패 — [HM] 판정·오늘개시 교차검증 생략:', e?.message ?? String(e));
       }
     }
 
@@ -190,6 +211,27 @@ async function main() {
         });
         process.exitCode = 2;
         return;
+      }
+    }
+
+    // 3.7 오늘 개시 교차검증 — 시트 개시일(BQ)==today 행(파트너 태그 제외)과 Slack 발견 목록 대조.
+    //   상류 개시 알림 flow(operations-cs.flow.launched-charger-daily-notify)는 0기면 미전송·
+    //   production 가드·relationPartnerId=1 필터라 '알림 없음'과 '개시 없음'이 구분되지 않는다.
+    //   시트에 오늘 예정이 있는데 알림에 없으면 '개시 지연 또는 알림 누락 의심' WARN 배너로 표면화.
+    //   (시트 개시일은 예정일 성격이라 ERROR가 아닌 WARN — 오탐 방지)
+    let crossWarn = '';
+    let crossStats = null;
+    if (yeongchaRows) {
+      const sheetToday = pickRowsForDates(yeongchaRows, [date]);
+      const found = new Set(stations.flatMap(s => (s.projectIds || []).map(String)));
+      const missing = sheetToday.filter(r => !found.has(String(r.projectId)));
+      crossStats = { sheetToday: sheetToday.length, missingFromAlert: missing.length };
+      if (missing.length) {
+        const names = missing.slice(0, 8).map(r => r.projectName ?? r.projectId).join(', ');
+        crossWarn = `⚠️ 영차영차 시트 기준 오늘 개시 예정 ${sheetToday.length}건 중 ${missing.length}건이 개시 알림에 없음 — 개시 지연 또는 알림 누락 의심: ${names}`;
+        console.warn('[crosscheck]', crossWarn);
+      } else {
+        console.log(`[crosscheck] 시트 오늘 개시 ${sheetToday.length}건 — 알림 발견분과 전건 일치`);
       }
     }
 
@@ -328,6 +370,7 @@ async function main() {
     const backupWarn = process.env.GITHUB_EVENT_NAME === 'schedule'
       ? '⚠️ 정시 n8n 트리거 미작동(또는 정시 실행 중도 실패) — GitHub 백업 cron으로 실행됨. n8n 발행상태·PAT 확인 필요.'
       : '';
+    const banner = [backupWarn, crossWarn].filter(Boolean).join('\n');
 
     if (hasContent) {
       const out = {
@@ -348,9 +391,9 @@ async function main() {
 
       // notify — DM + 채널(설정 시). 본문 Block Kit(가시성), text는 알림 fallback.
       const notifyArgs = { date, slot, summary, stations, tomorrowStations, tomorrowSummary, dashboardUrl };
-      const notifyText = (backupWarn ? backupWarn + '\n\n' : '') + buildSummaryText(notifyArgs);
+      const notifyText = (banner ? banner + '\n\n' : '') + buildSummaryText(notifyArgs);
       const notifyBlocks = buildSummaryBlocks(notifyArgs);
-      if (backupWarn) notifyBlocks.unshift({ type: 'section', text: { type: 'mrkdwn', text: `*${backupWarn}*` } });
+      if (banner) notifyBlocks.unshift({ type: 'section', text: { type: 'mrkdwn', text: `*${banner}*` } });
       await sendDM({
         token: process.env.SLACK_BOT_TOKEN,
         userId: process.env.NOTIFY_SLACK_USER_ID,
@@ -374,16 +417,29 @@ async function main() {
       //   manifest엔 empty 마커만 남겨 백업 cron이 중복 통지하지 않게 함(대시보드엔 미표시).
       console.log(`[empty] ${date} ${slot}: 서비스개시 충전소 없음 — DM만 통지 (today=${stations.length}${slot === 'evening' ? `, tomorrow=${tomorrowStations.length}` : ''})`);
       const slotKo = slot === 'morning' ? '오전' : '저녁';
+      const crossNote = yeongchaLoadFailed
+        ? '\n⚠️ 시트 로드 실패로 오늘개시 교차검증 미수행 — 백업 실행이 재시도합니다.'
+        : (crossStats ? `\n(시트 교차검증: 오늘 개시 예정 ${crossStats.sheetToday}건)` : '');
       await sendDM({
         token: process.env.SLACK_BOT_TOKEN,
         userId: process.env.NOTIFY_SLACK_USER_ID,
-        text: `${backupWarn ? backupWarn + '\n\n' : ''}🔌 서비스개시 검증 — ${date} ${slotKo}\n오늘 서비스개시 충전소가 없습니다. (검증 대상 없음)`,
+        text: `${banner ? banner + '\n\n' : ''}🔌 서비스개시 검증 — ${date} ${slotKo}\n오늘 서비스개시 충전소가 없습니다. (검증 대상 없음)${crossNote}`,
         dryRun
       });
-      manifestEntry = { date, slot, empty: true, summary: { totalStations: 0 } };
+      if (yeongchaLoadFailed) {
+        // 교차검증 미수행 상태로 '개시 0건'을 확정하지 않는다 — empty 마커를 게시하지 않아
+        //   백업 cron이 dedup에 안 걸리고 재시도하게 하고, 워크플로는 실패로 표시한다.
+        console.error('[empty] 시트 로드 실패 — empty 마커 미게시(백업 재시도 허용) + exitCode=1');
+        process.exitCode = 1;
+        manifestEntry = null;
+      } else {
+        manifestEntry = { date, slot, empty: true, summary: { totalStations: 0 }, ...(crossStats ? { crossCheck: crossStats } : {}) };
+      }
     }
 
     // 6. manifest 갱신 + retention + 배포 — 빈 날도 마커를 게시해 백업 cron이 dedup으로 skip.
+    //    (manifestEntry가 null이면 = 확정 불가 상태 — 게시·배포 자체를 생략해 재시도를 허용)
+    if (manifestEntry) {
     const newManifest = upsertManifest(manifest, manifestEntry, { retentionDays: RETENTION_DAYS, today: date });
     writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
     pruneDataDir(dataDir, { retentionDays: RETENTION_DAYS, today: date });
@@ -409,6 +465,7 @@ async function main() {
         process.exitCode = 1;
       }
     }
+    } // end: if (manifestEntry)
   } finally {
     await closeSession();
   }
