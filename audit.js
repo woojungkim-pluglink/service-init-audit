@@ -196,6 +196,13 @@ async function main() {
     // 4. 체커 순회
     for (const s of stations) {
       try {
+        // (테스트) 충전소 제외 — 온톨로지(proactive-fault-detection) 오탐 가드: "(테스트)소 제외".
+        //   실사례: (테스트)롯데이노베이트 신관이 다구 커넥터 셀로 FAIL 오탐(2026-06-17).
+        if (/\(\s*테스트\s*\)/.test(s.stationName ?? '')) {
+          s.excluded = true;
+          console.log(`  [exclude] (테스트) 충전소 제외: ${s.stationName}`);
+          continue;
+        }
         s.checks = {};
         // sheet 먼저 — 매칭 행의 projectName(E열)을 station에 채워 doc 키워드로 활용
         s.checks.sheet  = await safeRun('sheet',  () => checkSheet(s, ctx),  errors, s);
@@ -214,8 +221,8 @@ async function main() {
         s.checks.status  = await safeRun('status',  () => checkStatus(s, ctx), errors, s);
         // 서비스개시일자(충전기 테이블 맨 우측 열) 검증 — 공란·형식오류·미래날짜(순수 계산).
         s.checks.initdate = judgeInitDate(s, date);
-        // 커넥터 상태 '통신미연결' 충전기 탐지 — 순수 계산(I/O 없음).
-        s.checks.comm = judgeCommStatus(s);
+        // 통신 판정 — 마지막 통신 시각(1h) 1차 + '통신 상태' 라벨 보조 (순수 계산, I/O 없음).
+        s.checks.comm = judgeCommStatus(s, Date.now());
         s.overall = computeOverall(s.checks);
       } catch (e) {
         if (e?.message === 'PLINKCONNECT_LOGIN_EXPIRED') {

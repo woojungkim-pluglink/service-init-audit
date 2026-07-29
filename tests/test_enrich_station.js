@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { extractStationMeta, isStationMetaComplete, isChargerNormal, filterNewChargers } from '../lib/enrich_station.js';
+import { extractStationMeta, isStationMetaComplete, isChargerNormal, isConnectorStatusNormal, splitConnectorStatuses, filterNewChargers } from '../lib/enrich_station.js';
 
 const text = readFileSync(new URL('./fixtures/station_page_text.txt', import.meta.url), 'utf8');
 
@@ -60,6 +60,26 @@ test('isChargerNormal: 파란불(충전준비/충전중/충전완료)은 정상 
       false, `${cs} 는 비정상이어야 함`
     );
   }
+});
+
+test('splitConnectorStatuses: 다구 연접·에러코드 부기 셀 분해', () => {
+  assert.deepEqual(splitConnectorStatuses('사용가능사용가능'), ['사용가능', '사용가능']);
+  assert.deepEqual(splitConnectorStatuses('충전완료사용가능'), ['충전완료', '사용가능']);
+  assert.deepEqual(splitConnectorStatuses('사용불가 (901)'), ['사용불가']);
+  assert.deepEqual(splitConnectorStatuses('충전완료 (912-81)'), ['충전완료']);
+  assert.deepEqual(splitConnectorStatuses('고장 (912-0)'), ['고장']);
+  assert.deepEqual(splitConnectorStatuses('통신미연결'), ['통신미연결']); // 미연결보다 긴 토큰 우선
+  assert.deepEqual(splitConnectorStatuses(''), []);
+});
+
+test('isConnectorStatusNormal: 다구/에러코드 셀 판정 (실데이터 오탐 사례)', () => {
+  assert.equal(isConnectorStatusNormal('사용가능사용가능'), true);   // 2포트 모두 정상 — 기존 whitelist는 FAIL 오탐
+  assert.equal(isConnectorStatusNormal('충전완료사용가능'), true);
+  assert.equal(isConnectorStatusNormal('사용가능충전완료'), true);
+  assert.equal(isConnectorStatusNormal('충전완료 (912-81)'), true); // 에러코드 부기 — 라벨 기준 정상
+  assert.equal(isConnectorStatusNormal('사용불가 (901)'), false);
+  assert.equal(isConnectorStatusNormal('알수없음알수없음'), false);
+  assert.equal(isConnectorStatusNormal('사용가능사용불가'), false); // 한 포트라도 비정상이면 비정상
 });
 
 test('filterNewChargers: today 매칭만 남김', () => {
