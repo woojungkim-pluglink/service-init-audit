@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { judgeRate, extractPrice, extractContractTab, reconcileWithContract } from '../lib/check_rate.js';
+import { judgeRate, extractPrice, extractContractTab, reconcileWithContract, expectedNoticePrice } from '../lib/check_rate.js';
 
 // 시트 wide row 생성: B(1)=projectId, BD(55)=basic, BF(57)=special, BG(58)=period
 function mkRow(projectId, basic, special, period = '') {
@@ -114,6 +114,52 @@ test('judgeRate: "플러그링크 기본 요금"(띄어쓰기)도 기본요금 �
   const rows = [mkRow('813', '공동주택 고압', '미적용', '0')];
   const station = { projectIds: ['813'], newChargers: [charger('플러그링크 기본 요금')] };
   assert.equal(judgeRate(station, rows).status, 'PASS');
+});
+
+// ── 공시요금 고시가 이력 (2026-08-01 인하: 324.4 → 292원) ──
+
+test('expectedNoticePrice: 효력일 기준 고시가', () => {
+  assert.equal(expectedNoticePrice('2026-07-31'), '324.4');
+  assert.equal(expectedNoticePrice('2026-08-01'), '292');
+  assert.equal(expectedNoticePrice('2026-12-01'), '292');
+  assert.equal(expectedNoticePrice(null), null); // 기준일 없으면 강제 안 함
+});
+
+test('judgeRate: 8/1 이후 공시요금 292원 → PASS / 구단가 324.4원 잔존 → FAIL(인하 미반영 힌트)', () => {
+  const rows = [mkRow('813', '공동주택 고압', '미적용', '0')];
+  const ok = judgeRate({ projectIds: ['813'], initiatedAt: '2026-08-01', newChargers: [charger('플러그링크 공시요금 (292원)')] }, rows);
+  assert.equal(ok.status, 'PASS');
+  const stale = judgeRate({ projectIds: ['813'], initiatedAt: '2026-08-05', newChargers: [charger('플러그링크 공시요금 (324.4원)')] }, rows);
+  assert.equal(stale.status, 'FAIL');
+  assert.match(stale.message, /구단가 잔존 의심.*292원/);
+});
+
+test('judgeRate: 8/1 이전 개시는 324.4원이 정상 → PASS (이력 기반)', () => {
+  const rows = [mkRow('813', '공동주택 고압', '미적용', '0')];
+  const r = judgeRate({ projectIds: ['813'], initiatedAt: '2026-07-15', newChargers: [charger('플러그링크 공시요금 (324.4원)')] }, rows);
+  assert.equal(r.status, 'PASS');
+});
+
+test('judgeRate: 공시요금 아닌 기본요금 계열(고압 등)엔 고시가 강제 안 함', () => {
+  const rows = [mkRow('813', '공동주택 고압', '미적용', '0')];
+  const r = judgeRate({ projectIds: ['813'], initiatedAt: '2026-08-05', newChargers: [charger('공동주택 고압 (240원)')] }, rows);
+  assert.equal(r.status, 'PASS');
+});
+
+test('reconcile(공란): 8/1 이후 계약탭·충전기 모두 구단가 324.4원 → 일반요금 구제 금지(FAIL)', () => {
+  const base = {
+    status: 'SKIP',
+    evidence: {
+      reason: 'CONTRACT_BLANK',
+      contracts: [{ projectId: '1', basicRate: '', specialRate: '', specialPeriod: '', hasSpecial: false, expectedPrice: null }],
+      appliedRates: [{ rate: '플러그링크 공시요금 (324.4원)', price: '324.4', matched: false }]
+    },
+    message: '영업관리 시트 계약정보 공란 — 계약탭 2차 확인 필요'
+  };
+  const r = reconcileWithContract(base, { projectIds: ['1'], initiatedAt: '2026-08-05' }, [
+    { projectId: '1', specialPrice: null, specialPeriod: '0', generalRate: '플러그링크 공시요금 (324.4원)', hasAgreementFile: false, loaded: true }
+  ]);
+  assert.equal(r.status, 'FAIL'); // '일치'가 아니라 '인하 미반영'
 });
 
 // ── 계약탭 2차 확인 (영업관리 시트 오기재 산정) ──
