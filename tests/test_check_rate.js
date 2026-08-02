@@ -162,6 +162,45 @@ test('reconcile(공란): 8/1 이후 계약탭·충전기 모두 구단가 324.4�
   assert.equal(r.status, 'FAIL'); // '일치'가 아니라 '인하 미반영'
 });
 
+// ── 2026-08 요금명 리네임: '플러그링크 공시요금' → '플러그링크 완속' (서전기아타운 실측 오탐) ──
+
+test('judgeRate: 신명칭 "플러그링크 완속 (292원)" — 기본 계약 + 현재 고시가 → PASS (서전기아타운 재현)', () => {
+  const rows = [mkRow('27314', '공동주택 저압', '미적용', '0')];
+  const r = judgeRate({ projectIds: ['27314'], initiatedAt: '2026-08-03', newChargers: [charger('플러그링크 완속 (292원)')] }, rows);
+  assert.equal(r.status, 'PASS');
+});
+
+test('judgeRate: 신명칭인데 구단가 "플러그링크 완속 (324.4원)" → FAIL(구단가 잔존 힌트)', () => {
+  const rows = [mkRow('27314', '공동주택 저압', '미적용', '0')];
+  const r = judgeRate({ projectIds: ['27314'], initiatedAt: '2026-08-03', newChargers: [charger('플러그링크 완속 (324.4원)')] }, rows);
+  assert.equal(r.status, 'FAIL');
+  assert.match(r.message, /구단가 잔존 의심.*292원/);
+});
+
+test('judgeRate: "한화모티브 완속"은 여전히 기본요금 계열 아님 — 자사 현장에 섞이면 FAIL', () => {
+  const rows = [mkRow('27314', '공동주택 저압', '미적용', '0')];
+  const r = judgeRate({ projectIds: ['27314'], initiatedAt: '2026-08-03', newChargers: [charger('플러그링크 완속 (292원)'), charger('한화모티브 완속 (283원)')] }, rows);
+  assert.equal(r.status, 'FAIL');
+  assert.match(r.message, /한화모티브 완속/);
+});
+
+test('reconcile(공란): 계약탭이 구고시가 스냅샷(공시요금 324.4)인데 충전기는 현재 고시가(완속 292) → PASS (스냅샷 지연 허용)', () => {
+  const base = {
+    status: 'SKIP',
+    evidence: {
+      reason: 'CONTRACT_BLANK',
+      contracts: [{ projectId: '1', basicRate: '', specialRate: '', specialPeriod: '', hasSpecial: false, expectedPrice: null }],
+      appliedRates: [{ rate: '플러그링크 완속 (292원)', price: '292', matched: false }]
+    },
+    message: '영업관리 시트 계약정보 공란 — 계약탭 2차 확인 필요'
+  };
+  const r = reconcileWithContract(base, { projectIds: ['1'], initiatedAt: '2026-08-03' }, [
+    { projectId: '1', specialPrice: null, specialPeriod: '0', generalRate: '플러그링크 공시요금 (324.4원)', hasAgreementFile: true, loaded: true }
+  ]);
+  assert.equal(r.status, 'PASS');
+  assert.equal(r.evidence.reconciledBy, 'CONTRACT_TAB_GENERAL');
+});
+
 // ── 계약탭 2차 확인 (영업관리 시트 오기재 산정) ──
 
 const CONTRACT_TEXT_149 = `계약 결과
