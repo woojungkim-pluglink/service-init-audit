@@ -95,6 +95,8 @@ jobs:
             for f in $(jq -r '.slots[].file // empty' public/data/index.json 2>/dev/null); do
               curl -fsS "$BASE/$f" -o "public/data/$f" || miss=$((miss+1))
             done
+            # settle.json은 index.json slots에 안 잡히므로 별도 seed (미존재=최초엔 404 — 무시)
+            curl -fsS "$BASE/settle.json" -o public/data/settle.json || rm -f public/data/settle.json
             echo "seeded $(ls public/data/*.json 2>/dev/null | wc -l) file(s), $miss missing(404 등)"
           fi
 
