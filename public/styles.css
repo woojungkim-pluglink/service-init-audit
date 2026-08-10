@@ -29,3 +29,17 @@ section { margin: 16px 0; }
 .dot.morning { background: #ff9800; }
 .dot.evening { background: #5e35b1; }
 a { color: #007aff; text-decoration: none; }
+
+/* ── 개시 후 정착 추적 (settle) ── */
+#settle { margin: 16px 0 24px; }
+.settle-acc { font-weight: normal; font-size: 12px; color: #888; }
+.settle-error { background: #fdecea; color: #b71c1c; padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-size: 13px; }
+.settle-scroll { overflow-x: auto; margin-top: 8px; }
+.settle-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.settle-table th, .settle-table td { padding: 6px 10px; border-bottom: 1px solid #e5e5e5; text-align: left; white-space: nowrap; }
+.settle-table th { color: #666; font-weight: 600; }
+.settle-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 12px; background: #eee; }
+.settle-badge.failedConnection { background: #fff3e0; color: #e65100; }
+.settle-badge.failedUsable { background: #fdecea; color: #b71c1c; }
+.settle-badge.isError { background: #ede7f6; color: #4527a0; }
+.settle-new { background: #fffde7; }

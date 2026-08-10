@@ -15,16 +15,18 @@ const linkTag = (href, label) =>
 async function init() {
   try {
     const r = await fetch('/data/index.json');
-    if (!r.ok) { renderEmpty(); return; }
+    if (!r.ok) { loadSettle(); renderEmpty(); return; }
     state.manifest = await r.json();
     // empty 마커(개시 없는 날 — 백업 cron dedup용)는 대시보드에 표시하지 않음
     state.manifest.slots = (state.manifest.slots || []).filter(s => s.file && !s.empty);
   } catch (e) {
+    loadSettle();
     renderEmpty();
     return;
   }
   document.getElementById('last-updated').textContent =
     '마지막 갱신: ' + new Date(state.manifest.lastUpdated).toLocaleString('ko-KR');
+  loadSettle(); // 날짜 선택과 무관한 현재 스냅샷 — 비동기 병행
   renderSidebar();
   const dates = uniqueDates(state.manifest.slots).reverse();
   if (dates.length) await selectDate(dates[0]);
@@ -219,6 +221,62 @@ function renderCard(s) {
       </div>
     </div>
   `;
+}
+
+// ── 개시 후 정착 추적 (settle) ──────────────────────────────
+const SETTLE_TYPE_LABEL = { failedConnection: '통신미연결', failedUsable: '사용불가', isError: '에러' };
+const SETTLE_BUCKET_LABEL = { lt1h: '1h 미만', h1d24: '1h~24h', d1d7: '1~7일', gt7d: '7일+' };
+
+async function loadSettle() {
+  const el = document.getElementById('settle');
+  if (!el || el.dataset.loaded) return; // 중복 호출 가드
+  let d = null;
+  try {
+    const r = await fetch('/data/settle.json');
+    if (r.ok) d = await r.json();
+  } catch { /* 파일 없음 → 패널 숨김 */ }
+  el.dataset.loaded = '1';
+  if (!d) { el.innerHTML = ''; return; }
+  renderSettle(el, d);
+}
+
+function renderSettle(el, d) {
+  const err = d.error
+    ? `<div class="settle-error">⚠️ 갱신 실패: ${escapeHtml(d.error.message)} — 마지막 성공: ${d.error.lastSuccessAt ? new Date(d.error.lastSuccessAt).toLocaleString('ko-KR') : '없음'} (아래는 직전 성공 데이터)</div>`
+    : '';
+  const items = d.items ?? [];
+  const acc = d.accumulations;
+  const diff = d.diff;
+  const head = `
+    <div class="slot-title">🩺 개시 후 정착 추적 (D+${d.windowDays ?? 30}) · 이상 ${items.length}건${
+      diff ? ` · 신규 ↑${diff.newEntries.length} · 복구 ↓${diff.recovered.length}` : ''}${
+      acc ? `<span class="settle-acc"> — 위젯 전체: 통신미연결 ${acc.failedConnection} · 사용불가 ${acc.failedUsable} · 에러 ${acc.isError}</span>` : ''}
+    </div>
+    <div class="meta">갱신: ${d.runAt ? new Date(d.runAt).toLocaleString('ko-KR') : '?'}${d.fetched?.truncated ? ' · ⚠️ 수집 상한 도달(일부 누락 가능)' : ''}</div>`;
+  if (!items.length) {
+    el.innerHTML = head + err + `<div class="meta">개시 ${d.windowDays ?? 30}일 이내 이상 충전기 없음 ✅</div>`;
+    return;
+  }
+  const newSet = new Set(diff?.newEntries ?? []);
+  const rows = items.map(i => `
+    <tr class="${newSet.has(i.chargerId) ? 'settle-new' : ''}">
+      <td>D+${i.dPlus}</td>
+      <td>${i.stationId ? linkTag(stationUrl(i.stationId), escapeHtml(i.stationName ?? String(i.stationId))) : escapeHtml(i.stationName ?? '?')}</td>
+      <td>${escapeHtml(String(i.chargerId))}${i.deviceId ? ` <span class="meta">${escapeHtml(i.deviceId)}</span>` : ''}</td>
+      <td>${(i.types || []).map(t => `<span class="settle-badge ${t}">${SETTLE_TYPE_LABEL[t] ?? t}</span>`).join(' ')}</td>
+      <td>${i.outageBucket ? escapeHtml(SETTLE_BUCKET_LABEL[i.outageBucket] ?? i.outageBucket) : '-'}${i.sharedModemRisk ? ' <span title="동일 회선(CTN) 공유 — 거점 동시단절 위험">⚠️공유회선</span>' : ''}</td>
+      <td>${escapeHtml(i.launchedAt ?? '?')}</td>
+      <td>${escapeHtml(i.errorCode ?? '')}</td>
+    </tr>`).join('');
+  const recoveredNote = diff?.recovered?.length
+    ? `<div class="meta">복구됨(직전 대비): ${diff.recovered.map(r => escapeHtml(`${r.stationName ?? r.chargerId}(${r.chargerId})`)).join(', ')}</div>`
+    : '';
+  el.innerHTML = head + err + `
+    <div class="settle-scroll"><table class="settle-table">
+      <thead><tr><th>경과</th><th>충전소</th><th>충전기</th><th>이상 유형</th><th>두절 기간</th><th>개시일</th><th>에러코드</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${recoveredNote}`;
 }
 
 function escapeHtml(s) {
