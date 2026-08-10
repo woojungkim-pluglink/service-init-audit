@@ -25,6 +25,7 @@ import { upsertManifest, slotAlreadyDone } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
 import { buildGoogleAuth, makeSheetsCsvFetcher } from './lib/google_auth.js';
 import { checkYeongchaShape } from './lib/sheet_guard.js';
+import { runSettle } from './lib/settle.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, 'config', '.env') });
@@ -46,6 +47,8 @@ async function main() {
   if (!['morning', 'evening'].includes(slot)) throw new Error('--slot must be morning|evening');
   const date = args.date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' });
   const dryRun = args['dry-run'] === true;
+  const settleOn = args['no-settle'] !== true; // 개시 후 30일 정착 추적 (대시보드 전용) — 기본 ON
+  const dashboardUrl = process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app';
   // Vercel outputDirectory=public 이 /data/* 를 그대로 서빙하도록 public/data 에 직접 기록
   const dataDir = path.join(__dirname, 'public', 'data');
   const logsDir = path.join(__dirname, 'logs');
@@ -104,7 +107,8 @@ async function main() {
   // 2. session/context — 비싼 세션은 필요할 때만.
   //   morning: 오늘 0건이면 생략. evening: 다음날 개시 예정 확인이 필요하므로 0건이어도 생성.
   let ctx = null;
-  if (stations.length > 0 || slot === 'evening') {
+  //   settle(정착 추적)은 커넥트 JWT가 필요해 morning 0건에도 세션을 만든다 (--no-settle 시 기존 최적화 유지)
+  if (stations.length > 0 || slot === 'evening' || settleOn) {
     try {
       ctx = await buildContext({ dryRun });
     } catch (e) {
@@ -112,7 +116,7 @@ async function main() {
       throw e;
     }
   } else {
-    console.log('[audit] morning 0건 — Playwright 세션 생략');
+    console.log('[audit] morning 0건 + settle OFF — Playwright 세션 생략');
   }
 
   try {
@@ -355,11 +359,23 @@ async function main() {
       }
     }
 
+    // 4.8 개시 후 30일 정착 추적(settle) — 대시보드 전용(Slack 발송 없음).
+    //     실패는 runSettle 내부에서 흡수(직전 성공분+error로 게시) — 기존 검증·알림·exit code 불변.
+    if (settleOn && ctx) {
+      const r = await runSettle({
+        browserContext: ctx.browserContext,
+        base: PLINKCONNECT_BASE,
+        dashboardUrl, dataDir, date, slot
+      });
+      console.log(r.ok
+        ? `[settle] 추적 이상 ${r.tracked}건 (신규 ${r.diff?.newEntries?.length ?? '-'} / 복구 ${r.diff?.recovered?.length ?? '-'}) → settle.json`
+        : `[settle] 실패 — 대시보드 배너로 표시: ${r.error}`);
+    }
+
     // 5. 알림 / 저장 — 서비스개시 충전소 유무로 분기.
     //   evening은 '다음날 개시 예정'도 0건이어야 빈 날로 본다(오후알림의 다음날 개시 포함).
     const summary = computeSummary(stations);
     const hasContent = stations.length > 0 || (slot === 'evening' && tomorrowStations.length > 0);
-    const dashboardUrl = process.env.DASHBOARD_URL || 'https://service-init-audit.vercel.app';
     const manifestPath = path.join(dataDir, 'index.json');
     const manifest = existsSync(manifestPath)
       ? JSON.parse(readFileSync(manifestPath, 'utf8'))
