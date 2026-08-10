@@ -135,3 +135,16 @@ test('diffSnapshots: 신규 진입·복구 검출, 창 이탈(에이징아웃)�
   assert.equal(d.recovered.length, 1);           // id 1만 복구 (id 2는 에이징아웃)
   assert.equal(d.recovered[0].chargerId, 1);
 });
+
+test('diffSnapshots: prev=null(최초 실행) → newEntries만, recovered=빈배열', () => {
+  const next = {
+    date: '2026-08-10', windowDays: 30,
+    items: [
+      { chargerId: 1, stationName: 'A', types: ['failedConnection'], dPlus: 5 },
+      { chargerId: 2, stationName: 'B', types: ['isError'], dPlus: 10 }
+    ]
+  };
+  const d = diffSnapshots(null, next);
+  assert.deepEqual(d.newEntries, [1, 2]);
+  assert.deepEqual(d.recovered, []);
+});
