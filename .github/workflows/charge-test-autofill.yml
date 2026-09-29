@@ -1,3 +1,8 @@
+# 2026-09-29: 리포를 public 으로 전환. private 리포는 계정 공용 Actions 무료 한도(2,000분/월)를 쓰는데
+#   VOC 알림의 10분 주기가 이를 소진시켜 2026-09-16 17:05 부터 모든 워크플로가 job 미시작으로 실패했다.
+#   public 리포는 Actions 가 무제한이라 한도 문제가 재발하지 않는다.
+#   공개 전 히스토리에서 커넥트 화면 스크랩·실제 고객 이메일을 제거했다(git-filter-repo).
+#   세탁 전 원본은 private 리포 service-init-audit-archive 에 보존.
 name: charge-test-autofill
 on:
   schedule:
