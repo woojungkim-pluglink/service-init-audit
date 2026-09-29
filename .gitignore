@@ -8,3 +8,7 @@ tmp_login_inspect/
 tmp_autologin_test/
 
 .vercel
+
+# 커넥트 관리자 화면 스크랩(고객정보·스크린샷) — 절대 커밋 금지
+scripts/inspect_output/
+test-results/
