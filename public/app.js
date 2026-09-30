@@ -2,7 +2,8 @@ const state = {
   manifest: null,
   current: null,
   slotData: { morning: null, evening: null },
-  filterFailOnly: false
+  filterFailOnly: false,
+  settleReq: 0   // 정착 추적 로드 순번 — 날짜를 빠르게 바꿀 때 늦게 도착한 옛 응답이 덮어쓰지 않게
 };
 
 const PLINKCONNECT = 'https://connect.pluglink.kr';
@@ -15,22 +16,23 @@ const linkTag = (href, label) =>
 async function init() {
   try {
     const r = await fetch('/data/index.json');
-    if (!r.ok) { loadSettle(); renderEmpty(); return; }
+    if (!r.ok) { loadSettle(null); renderEmpty(); return; }
     state.manifest = await r.json();
     // empty 마커(개시 없는 날 — 백업 cron dedup용)는 대시보드에 표시하지 않음
     state.manifest.slots = (state.manifest.slots || []).filter(s => s.file && !s.empty);
+    state.manifest.settle = state.manifest.settle || [];
   } catch (e) {
-    loadSettle();
+    loadSettle(null);
     renderEmpty();
     return;
   }
   document.getElementById('last-updated').textContent =
     '마지막 갱신: ' + new Date(state.manifest.lastUpdated).toLocaleString('ko-KR');
-  loadSettle(); // 날짜 선택과 무관한 현재 스냅샷 — 비동기 병행
   renderSidebar();
-  const dates = uniqueDates(state.manifest.slots).reverse();
+  // 개시가 없던 날도 정착 추적 스냅샷은 남으므로 목록·기본 선택은 두 원천의 합집합으로 잡는다
+  const dates = sidebarDates().reverse();
   if (dates.length) await selectDate(dates[0]);
-  else renderEmpty();
+  else { renderEmpty(); loadSettle(null); }
 
   document.getElementById('filter-fail-only').addEventListener('change', (e) => {
     state.filterFailOnly = e.target.checked;
@@ -49,14 +51,25 @@ function uniqueDates(slots) {
   return [...new Set(slots.map(s => s.date))].sort();
 }
 
+/** 사이드바 날짜 = 개시 슬롯 날짜 ∪ 정착 추적 스냅샷 날짜 (개시 없는 날의 스냅샷도 볼 수 있게) */
+function sidebarDates() {
+  const m = state.manifest || {};
+  return [...new Set([...(m.slots || []), ...(m.settle || [])].map(s => s.date))].sort();
+}
+
+const settleEntryOf = date => (state.manifest?.settle || []).find(s => s.date === date) || null;
+
 function renderSidebar() {
   const ul = document.getElementById('date-list');
   ul.innerHTML = '';
-  for (const d of uniqueDates(state.manifest.slots).reverse()) {
+  for (const d of sidebarDates().reverse()) {
     const slotsForDate = state.manifest.slots.filter(s => s.date === d);
+    const se = settleEntryOf(d);
     const li = document.createElement('li');
     li.dataset.date = d;
-    li.innerHTML = `<span>${d}</span><span>${slotsForDate.map(s => `<span class="dot ${s.slot}"></span>`).join('')}</span>`;
+    const settleDot = se
+      ? `<span class="dot settle" title="정착 추적 스냅샷 · 이상 ${se.tracked ?? '?'}건"></span>` : '';
+    li.innerHTML = `<span>${d}</span><span>${slotsForDate.map(s => `<span class="dot ${s.slot}"></span>`).join('')}${settleDot}</span>`;
     li.addEventListener('click', () => selectDate(d));
     ul.appendChild(li);
   }
@@ -67,6 +80,7 @@ async function selectDate(date) {
   for (const li of document.querySelectorAll('#date-list li')) {
     li.classList.toggle('active', li.dataset.date === date);
   }
+  loadSettle(date); // 선택 날짜의 정착 추적 스냅샷 — 비동기 병행
   state.slotData.morning = await loadSlot(date, 'morning');
   state.slotData.evening = await loadSlot(date, 'evening');
   renderBody();
@@ -161,6 +175,11 @@ function renderTomorrowCard(s) {
 
 function renderSummary() {
   const both = ['morning', 'evening'].map(s => state.slotData[s]).filter(Boolean);
+  if (!both.length) {
+    // 정착 추적 스냅샷만 있는 날 — 개시 알림이 없었던 날이다
+    document.getElementById('summary').innerHTML = '이 날은 서비스개시 알림이 없었습니다. (아래 정착 추적 스냅샷만 있음)';
+    return;
+  }
   const totals = both.reduce((acc, d) => {
     acc.totalStations += (d.summary.totalStations ?? d.summary.totalProjects ?? 0);
     for (const k of ['PASS', 'WARN', 'FAIL', 'SKIP']) acc.byOverall[k] += d.summary.byOverall[k] || 0;
@@ -227,20 +246,40 @@ function renderCard(s) {
 const SETTLE_TYPE_LABEL = { failedConnection: '통신미연결', failedUsable: '사용불가', isError: '에러' };
 const SETTLE_BUCKET_LABEL = { lt1h: '1h 미만', h1d24: '1h~24h', d1d7: '1~7일', gt7d: '7일+' };
 
-async function loadSettle() {
+/**
+ * 선택 날짜의 정착 추적 스냅샷을 보여준다 (일별 보존본 `YYYY-MM-DD-settle.json`).
+ *   - 그 날짜 스냅샷이 있으면 그것 (신규·복구는 전날 스냅샷 대비)
+ *   - 없고 가장 최근 날짜면 최신본 settle.json (일별 보존 도입 전·첫 실행 전 대비)
+ *   - 그 외 날짜는 '스냅샷 없음' — 최신 데이터를 옛 날짜 밑에 보여주면 오해를 부른다
+ * @param {string|null} date null 이면 매니페스트 없이 최신본만 시도
+ */
+async function loadSettle(date) {
   const el = document.getElementById('settle');
-  if (!el || el.dataset.loaded) return; // 중복 호출 가드
+  if (!el) return;
+  const req = ++state.settleReq;
+  const entry = date ? settleEntryOf(date) : null;
+  const dates = state.manifest ? sidebarDates() : [];
+  const isLatest = !date || date === dates[dates.length - 1];
+  const file = entry ? entry.file : (isLatest ? 'settle.json' : null);
+
+  if (!file) {
+    const first = (state.manifest?.settle || [])[0]?.date;
+    const since = first ? `일별 보존은 ${escapeHtml(first)} 부터` : '일별 보존 시작 전';
+    el.innerHTML = `<div class="slot-title">🩺 개시 후 정착 추적</div>
+      <div class="meta">${escapeHtml(date)} 의 정착 추적 스냅샷이 없습니다. (${since})</div>`;
+    return;
+  }
   let d = null;
   try {
-    const r = await fetch('/data/settle.json');
+    const r = await fetch('/data/' + file);
     if (r.ok) d = await r.json();
   } catch { /* 파일 없음 → 패널 숨김 */ }
-  el.dataset.loaded = '1';
+  if (req !== state.settleReq) return; // 그 사이 다른 날짜가 선택됨 — 늦은 응답 폐기
   if (!d) { el.innerHTML = ''; return; }
-  renderSettle(el, d);
+  renderSettle(el, d, { snapshotDate: entry ? date : null });
 }
 
-function renderSettle(el, d) {
+function renderSettle(el, d, { snapshotDate = null } = {}) {
   const err = d.error
     ? `<div class="settle-error">⚠️ 갱신 실패: ${escapeHtml(d.error.message)} — 마지막 성공: ${d.error.lastSuccessAt ? new Date(d.error.lastSuccessAt).toLocaleString('ko-KR') : '없음'} (아래는 직전 성공 데이터)</div>`
     : '';
@@ -252,7 +291,9 @@ function renderSettle(el, d) {
       diff ? ` · 신규 ↑${diff.newEntries.length} · 복구 ↓${diff.recovered.length}` : ''}${
       acc ? `<span class="settle-acc"> — 위젯 전체: 통신미연결 ${acc.failedConnection} · 사용불가 ${acc.failedUsable} · 에러 ${acc.isError}</span>` : ''}
     </div>
-    <div class="meta">갱신: ${d.runAt ? new Date(d.runAt).toLocaleString('ko-KR') : '?'}${d.fetched?.truncated ? ' · ⚠️ 수집 상한 도달(일부 누락 가능)' : ''}</div>`;
+    <div class="meta">${snapshotDate ? `📌 ${escapeHtml(snapshotDate)} 스냅샷 · ` : '최신본 · '}갱신: ${d.runAt ? new Date(d.runAt).toLocaleString('ko-KR') : '?'}${
+      diff ? ` · 신규·복구 비교 기준: ${/^\d{4}-\d{2}-\d{2}$/.test(d.diffBase ?? '') ? `${escapeHtml(d.diffBase)} 스냅샷` : '직전 실행'}` : ''}${
+      d.fetched?.truncated ? ' · ⚠️ 수집 상한 도달(일부 누락 가능)' : ''}</div>`;
   if (!items.length) {
     el.innerHTML = head + err + `<div class="meta">개시 ${d.windowDays ?? 30}일 이내 이상 충전기 없음 ✅</div>`;
     return;

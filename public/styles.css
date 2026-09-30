@@ -28,6 +28,7 @@ section { margin: 16px 0; }
 .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 3px; }
 .dot.morning { background: #ff9800; }
 .dot.evening { background: #5e35b1; }
+.dot.settle { background: #2e7d32; } /* 정착 추적 일별 스냅샷 있음 */
 a { color: #007aff; text-decoration: none; }
 
 /* ── 개시 후 정착 추적 (settle) ── */

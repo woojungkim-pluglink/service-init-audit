@@ -148,3 +148,53 @@ test('diffSnapshots: prev=null(최초 실행) → newEntries만, recovered=빈�
   assert.deepEqual(d.newEntries, [1, 2]);
   assert.deepEqual(d.recovered, []);
 });
+
+// ── 일별 스냅샷 (대시보드에서 날짜별로 되돌아보기) ──
+import { dailySettleFile, pickPrevDailyFile, buildDailySnapshot } from '../lib/settle_core.js';
+
+test('dailySettleFile: 날짜 접두 파일명 — retention.js 의 YYYY-MM-DD- 규칙에 걸려 90일 후 자동 정리된다', () => {
+  assert.equal(dailySettleFile('2026-09-30'), '2026-09-30-settle.json');
+  assert.match(dailySettleFile('2026-09-30'), /^\d{4}-\d{2}-\d{2}-/);
+});
+
+test('pickPrevDailyFile: 오늘보다 이전의 가장 최근 스냅샷을 고른다 (실행이 빠진 날은 건너뛴다)', () => {
+  const files = ['2026-09-26-settle.json', '2026-09-28-settle.json', '2026-09-30-settle.json',
+                 '2026-09-28-morning.json', 'settle.json', 'index.json'];
+  assert.equal(pickPrevDailyFile(files, '2026-09-30'), '2026-09-28-settle.json');
+  assert.equal(pickPrevDailyFile(files, '2026-09-27'), '2026-09-26-settle.json');
+});
+
+test('pickPrevDailyFile: 당일 파일은 비교 기준이 아니다 (저녁이 아침과 비교하면 일간 변화가 아니라 반나절 변화가 된다)', () => {
+  assert.equal(pickPrevDailyFile(['2026-09-30-settle.json'], '2026-09-30'), null);
+  assert.equal(pickPrevDailyFile([], '2026-09-30'), null);
+});
+
+const snap = (date, ids) => ({
+  date, slot: 'evening', runAt: `${date}T08:00:00Z`, windowDays: 30,
+  items: ids.map(id => ({ chargerId: id, stationName: `S${id}`, types: ['isError'], dPlus: 3 })),
+  diff: { newEntries: ['vs-prev-run'], recovered: [] }, prevRunAt: 'this-morning'
+});
+
+test('buildDailySnapshot: 신규·복구를 "전날 스냅샷" 대비로 다시 계산한다', () => {
+  const today = snap('2026-09-30', [1, 3]);
+  const prev = snap('2026-09-29', [1, 2]);
+  const d = buildDailySnapshot(today, prev);
+  assert.deepEqual(d.diff.newEntries, [3]);
+  assert.deepEqual(d.diff.recovered.map(r => r.chargerId), [2]);
+  assert.equal(d.diffBase, '2026-09-29');
+  assert.equal(d.prevRunAt, '2026-09-29T08:00:00Z');
+});
+
+test('buildDailySnapshot: 전날 스냅샷이 없으면(기능 첫날) 직전 실행 대비 diff 를 그대로 쓴다', () => {
+  const today = snap('2026-09-30', [1]);
+  const d = buildDailySnapshot(today, null);
+  assert.deepEqual(d.diff, today.diff);
+  assert.equal(d.diffBase, 'prev-run');
+});
+
+test('buildDailySnapshot: 원본 스냅샷을 변형하지 않는다 (settle.json 최신본은 직전 실행 대비를 유지)', () => {
+  const today = snap('2026-09-30', [1, 3]);
+  const before = JSON.stringify(today);
+  buildDailySnapshot(today, snap('2026-09-29', [1, 2]));
+  assert.equal(JSON.stringify(today), before);
+});

@@ -100,7 +100,13 @@ jobs:
             for f in $(jq -r '.slots[].file // empty' public/data/index.json 2>/dev/null); do
               curl -fsS "$BASE/$f" -o "public/data/$f" || miss=$((miss+1))
             done
-            # settle.json은 index.json slots에 안 잡히므로 별도 seed (미존재=최초엔 404 — 무시)
+            # 정착 추적 일별 스냅샷 — index.json 의 settle 색인에 있는 파일도 받아야 배포에 남는다.
+            #   (빠뜨리면 매 배포마다 과거 스냅샷이 사라져 '날짜별 되돌아보기'가 하루치만 남는다)
+            #   `.settle[]?` — settle 색인이 없던 옛 매니페스트에서도 조용히 0건으로 통과.
+            for f in $(jq -r '.settle[]?.file // empty' public/data/index.json 2>/dev/null); do
+              curl -fsS "$BASE/$f" -o "public/data/$f" || miss=$((miss+1))
+            done
+            # settle.json(최신본)은 색인과 별개로 seed — 직전 실행 대비 diff 기준 (미존재=최초엔 404 — 무시)
             curl -fsS "$BASE/settle.json" -o public/data/settle.json || rm -f public/data/settle.json
             echo "seeded $(ls public/data/*.json 2>/dev/null | wc -l) file(s), $miss missing(404 등)"
           fi

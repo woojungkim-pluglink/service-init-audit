@@ -21,7 +21,7 @@ import { judgeInitDate } from './lib/check_initdate.js';
 import { judgeCommStatus } from './lib/check_commstatus.js';
 import { checkSheet, loadYeongchaRows, findProjectNameByProjectIds } from './lib/check_sheet.js';
 import { sendDM, buildSummaryText, buildSummaryBlocks } from './lib/notify.js';
-import { upsertManifest, slotAlreadyDone } from './lib/manifest.js';
+import { upsertManifest, upsertSettleIndex, slotAlreadyDone } from './lib/manifest.js';
 import { pruneDataDir } from './lib/retention.js';
 import { buildGoogleAuth, makeSheetsCsvFetcher } from './lib/google_auth.js';
 import { checkYeongchaShape } from './lib/sheet_guard.js';
@@ -361,15 +361,17 @@ async function main() {
 
     // 4.8 개시 후 30일 정착 추적(settle) — 대시보드 전용(Slack 발송 없음).
     //     실패는 runSettle 내부에서 흡수(직전 성공분+error로 게시) — 기존 검증·알림·exit code 불변.
+    let settleDaily = null;   // 일별 스냅샷 색인 항목 — 6단계에서 매니페스트에 올린다
     if (settleOn && ctx) {
       const r = await runSettle({
         browserContext: ctx.browserContext,
         base: PLINKCONNECT_BASE,
         dashboardUrl, dataDir, date, slot
       });
+      settleDaily = r.daily ?? null;
       console.log(r.ok
-        ? `[settle] 추적 이상 ${r.tracked}건 (신규 ${r.diff?.newEntries?.length ?? '-'} / 복구 ${r.diff?.recovered?.length ?? '-'}) → settle.json`
-        : `[settle] 실패 — 대시보드 배너로 표시: ${r.error}`);
+        ? `[settle] 추적 이상 ${r.tracked}건 (신규 ${r.diff?.newEntries?.length ?? '-'} / 복구 ${r.diff?.recovered?.length ?? '-'}) → settle.json + ${r.daily?.file}`
+        : `[settle] 실패 — 대시보드 배너로 표시(일별 스냅샷 유지): ${r.error}`);
     }
 
     // 5. 알림 / 저장 — 서비스개시 충전소 유무로 분기.
@@ -456,7 +458,8 @@ async function main() {
     // 6. manifest 갱신 + retention + 배포 — 빈 날도 마커를 게시해 백업 cron이 dedup으로 skip.
     //    (manifestEntry가 null이면 = 확정 불가 상태 — 게시·배포 자체를 생략해 재시도를 허용)
     if (manifestEntry) {
-    const newManifest = upsertManifest(manifest, manifestEntry, { retentionDays: RETENTION_DAYS, today: date });
+    let newManifest = upsertManifest(manifest, manifestEntry, { retentionDays: RETENTION_DAYS, today: date });
+    if (settleDaily) newManifest = upsertSettleIndex(newManifest, settleDaily);
     writeFileSync(manifestPath, JSON.stringify(newManifest, null, 2));
     pruneDataDir(dataDir, { retentionDays: RETENTION_DAYS, today: date });
 

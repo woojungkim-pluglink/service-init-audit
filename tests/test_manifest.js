@@ -50,3 +50,42 @@ test('upsertManifest: 90일 초과 제거', () => {
   assert.equal(r.slots.length, 1);
   assert.equal(r.slots[0].file, 'new.json');
 });
+
+// ── 정착 추적 일별 스냅샷 색인 (index.json 의 settle 배열) ──
+import { upsertSettleIndex } from '../lib/manifest.js';
+
+test('upsertManifest: 기존 settle 색인을 보존한다 (slots 갱신이 settle 을 지우면 CI seed 가 스냅샷을 못 받아 이력 소실)', () => {
+  const m = { slots: [], settle: [{ date: '2026-09-29', file: '2026-09-29-settle.json', tracked: 8 }] };
+  const r = upsertManifest(m, { date: '2026-09-30', slot: 'morning', file: '2026-09-30-morning.json' },
+    { today: '2026-09-30', now: 'X' });
+  assert.deepEqual(r.settle, [{ date: '2026-09-29', file: '2026-09-29-settle.json', tracked: 8 }]);
+});
+
+test('upsertManifest: settle 색인에도 보존기간을 적용한다', () => {
+  const m = { slots: [], settle: [
+    { date: '2026-06-01', file: '2026-06-01-settle.json' },
+    { date: '2026-09-29', file: '2026-09-29-settle.json' }
+  ]};
+  const r = upsertManifest(m, { date: '2026-09-30', slot: 'morning', file: 'f' },
+    { today: '2026-09-30', retentionDays: 90, now: 'X' });
+  assert.deepEqual(r.settle.map(s => s.date), ['2026-09-29']);
+});
+
+test('upsertSettleIndex: 같은 날짜는 덮어쓴다 (저녁 실행이 아침 스냅샷을 대체 = 그날의 최종 상태)', () => {
+  const m = { slots: [], settle: [{ date: '2026-09-30', file: '2026-09-30-settle.json', tracked: 5 }] };
+  const r = upsertSettleIndex(m, { date: '2026-09-30', file: '2026-09-30-settle.json', tracked: 7 });
+  assert.equal(r.settle.length, 1);
+  assert.equal(r.settle[0].tracked, 7);
+});
+
+test('upsertSettleIndex: 날짜 오름차순 정렬, slots 는 건드리지 않는다', () => {
+  const m = { slots: [{ date: '2026-09-30', slot: 'morning' }], settle: [{ date: '2026-09-30', file: 'b' }] };
+  const r = upsertSettleIndex(m, { date: '2026-09-28', file: 'a' });
+  assert.deepEqual(r.settle.map(s => s.date), ['2026-09-28', '2026-09-30']);
+  assert.deepEqual(r.slots, m.slots);
+});
+
+test('upsertSettleIndex: settle 키가 없던 옛 매니페스트도 받아준다', () => {
+  const r = upsertSettleIndex({ slots: [] }, { date: '2026-09-30', file: '2026-09-30-settle.json' });
+  assert.equal(r.settle.length, 1);
+});
