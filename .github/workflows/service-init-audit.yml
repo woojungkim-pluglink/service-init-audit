@@ -69,18 +69,31 @@ jobs:
       - name: Determine slot (KST)
         id: slot
         run: |
+          # 슬롯 날짜(KST)도 여기서 정한다. 백업 cron은 큐 지연으로 몇 시간 늦게 발화하고 자정을
+          # 넘기기도 하는데, audit.js 기본값(실행 시점 날짜)을 쓰면 '다음 날' 슬롯을 0건으로 미리
+          # 처리(dedup 마커 게시)해 그날 정시(n8n) 실행이 '이미 처리됨'으로 건너뛴다
+          # (2026-10-02·10-06·10-07 저녁 실제 발생). → 예정 시각 전에 발화했으면 전날 슬롯으로 본다.
+          NOW=$(TZ=Asia/Seoul date +%H%M)
+          TODAY=$(TZ=Asia/Seoul date +%F)
+          YDAY=$(TZ=Asia/Seoul date -d yesterday +%F)
+          DATE="$TODAY"
           if [ -n "${{ github.event.inputs.slot }}" ]; then
-            # workflow_dispatch(n8n/수동): 입력 슬롯 그대로
-            echo "slot=${{ github.event.inputs.slot }}" >> "$GITHUB_OUTPUT"
+            # workflow_dispatch(n8n/수동): 입력 슬롯 그대로, 날짜는 오늘
+            SLOT="${{ github.event.inputs.slot }}"
           elif [ "${{ github.event.schedule }}" = "5 23 * * *" ]; then
             # 백업 cron: 어느 cron이 발화했는지로 슬롯 결정(지연돼도 정확)
-            echo "slot=morning" >> "$GITHUB_OUTPUT"
+            SLOT=morning
+            if [ $((10#$NOW)) -lt 805 ]; then DATE="$YDAY"; fi
           elif [ "${{ github.event.schedule }}" = "5 8 * * *" ]; then
-            echo "slot=evening" >> "$GITHUB_OUTPUT"
+            SLOT=evening
+            if [ $((10#$NOW)) -lt 1705 ]; then DATE="$YDAY"; fi
           else
             H=$(TZ=Asia/Seoul date +%H)
-            if [ "$H" -lt 12 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
+            if [ $((10#$H)) -lt 12 ]; then SLOT=morning; else SLOT=evening; fi
           fi
+          echo "slot=$SLOT" >> "$GITHUB_OUTPUT"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          echo "event=${{ github.event_name }} slot=$SLOT date=$DATE (KST now $TODAY $NOW)"
 
       - name: Seed dashboard history (live 전체 받아 누적 — 과거 파일 유실 방지)
         run: |
@@ -136,7 +149,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: node audit.js --slot=${{ steps.slot.outputs.slot }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}
+        run: node audit.js --slot=${{ steps.slot.outputs.slot }} --date=${{ steps.slot.outputs.date }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}
 
       # 잡이 어떤 단계에서든 실패하면(seed 중단·npm·Playwright·audit FATAL·타임아웃) Slack DM으로 통지.
       #   '메시지가 안 왔다'를 사람이 눈치채야 하는 침묵 실패를 없앤다(dead-man 방어).
