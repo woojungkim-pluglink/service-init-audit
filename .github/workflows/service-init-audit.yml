@@ -46,6 +46,10 @@ on:
         type: boolean
         required: false
         default: false
+      date:
+        description: '슬롯 날짜(KST, YYYY-MM-DD) — 비우면 오늘. 과거 슬롯 소급 점검용이라 dry_run=true 와 함께만 허용'
+        required: false
+        default: ''
   schedule:                 # 백업(지연 가능) — n8n 실패 시 누락 방지
     - cron: '5 23 * * *'    #  08:05 KST = 23:05 UTC(전날) → morning
     - cron: '5 8 * * *'     #  17:05 KST = 08:05 UTC       → evening
@@ -77,6 +81,9 @@ jobs:
 
       - name: Determine slot (KST)
         id: slot
+        env:
+          INPUT_DATE: ${{ github.event.inputs.date }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
           # 슬롯 날짜(KST)도 여기서 정한다. 백업 cron은 큐 지연으로 몇 시간 늦게 발화하고 자정을
           # 넘기기도 하는데, audit.js 기본값(실행 시점 날짜)을 쓰면 '다음 날' 슬롯을 0건으로 미리
@@ -87,8 +94,18 @@ jobs:
           YDAY=$(TZ=Asia/Seoul date -d yesterday +%F)
           DATE="$TODAY"
           if [ -n "${{ github.event.inputs.slot }}" ]; then
-            # workflow_dispatch(n8n/수동): 입력 슬롯 그대로, 날짜는 오늘
+            # workflow_dispatch(n8n/수동): 입력 슬롯 그대로, 날짜는 오늘(소급 점검은 date 입력)
             SLOT="${{ github.event.inputs.slot }}"
+            if [ -n "$INPUT_DATE" ]; then
+              # 과거 슬롯 소급 점검. 실제 실행이면 옛 알림 스레드 답글·원격제어·배포가 나가므로 드라이런만 허용.
+              if ! [[ "$INPUT_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                echo "::error::date 형식 오류(YYYY-MM-DD): $INPUT_DATE"; exit 1
+              fi
+              if [ "$INPUT_DRY_RUN" != "true" ]; then
+                echo "::error::date 입력은 dry_run=true 와 함께만 쓸 수 있다"; exit 1
+              fi
+              DATE="$INPUT_DATE"
+            fi
           elif [ "${{ github.event.schedule }}" = "5 23 * * *" ]; then
             # 백업 cron: 어느 cron이 발화했는지로 슬롯 결정(지연돼도 정확)
             SLOT=morning
@@ -159,6 +176,22 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: node audit.js --slot=${{ steps.slot.outputs.slot }} --date=${{ steps.slot.outputs.date }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}${{ github.event.inputs.dry_run == 'true' && ' --dry-run' || '' }}
+
+      # 드라이런은 배포·Slack이 없어 결과를 볼 곳이 로그뿐이다. 리포가 public 이라 로그도 공개되므로
+      #   공개 대시보드에 올라가는 수준(충전소명·체크 상태·메시지)만 찍고 evidence 원본은 찍지 않는다.
+      - name: Print dry-run results
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        env:
+          SLOT: ${{ steps.slot.outputs.slot }}
+          DATE: ${{ steps.slot.outputs.date }}
+        run: |
+          F="public/data/${DATE}-${SLOT}.json"
+          if [ ! -f "$F" ]; then echo "결과 파일 없음($F) — 개시 0건(empty) 슬롯"; exit 0; fi
+          jq -r '
+            "[dry-run 결과] \(.stations | length)개소",
+            (.stations[] | "■ \(.stationName // "?") (\(.stationId)) overall=\(.overall)",
+              ((.checks // {}) | to_entries[] | "   - \(.key): \(.value.status) — \(.value.message // "")"))
+          ' "$F"
 
       # 잡이 어떤 단계에서든 실패하면(seed 중단·npm·Playwright·audit FATAL·타임아웃) Slack DM으로 통지.
       #   '메시지가 안 왔다'를 사람이 눈치채야 하는 침묵 실패를 없앤다(dead-man 방어).
