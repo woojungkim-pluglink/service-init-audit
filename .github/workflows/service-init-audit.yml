@@ -51,7 +51,10 @@ concurrency:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # 2026-11-10: ubuntu-latest 가 Ubuntu 26.04 로 넘어가자 lock 고정 Playwright 1.60.0 이
+    #   'does not support chromium on ubuntu26.04-x64' 로 Install Chromium 단계에서 매번 실패했다(42회 연속).
+    #   Playwright 는 1.61 부터 26.04 를 지원한다. 업그레이드·회귀 확인 전까지 러너를 24.04 로 고정.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
