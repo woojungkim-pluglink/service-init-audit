@@ -41,6 +41,11 @@ on:
         type: boolean
         required: false
         default: false
+      dry_run:
+        description: '드라이런 — 검증만 하고 Slack 발송·원격제어·배포는 하지 않음(러너·의존성 변경 확인용)'
+        type: boolean
+        required: false
+        default: false
   schedule:                 # 백업(지연 가능) — n8n 실패 시 누락 방지
     - cron: '5 23 * * *'    #  08:05 KST = 23:05 UTC(전날) → morning
     - cron: '5 8 * * *'     #  17:05 KST = 08:05 UTC       → evening
@@ -53,8 +58,9 @@ jobs:
   audit:
     # 2026-11-10: ubuntu-latest 가 Ubuntu 26.04 로 넘어가자 lock 고정 Playwright 1.60.0 이
     #   'does not support chromium on ubuntu26.04-x64' 로 Install Chromium 단계에서 매번 실패했다(42회 연속).
-    #   Playwright 는 1.61 부터 26.04 를 지원한다. 업그레이드·회귀 확인 전까지 러너를 24.04 로 고정.
-    runs-on: ubuntu-24.04
+    #   11-20 Playwright 1.65.1 로 올려(1.61 부터 26.04 지원) ubuntu-latest 로 복귀.
+    #   러너 메이저가 또 바뀌면 Playwright 지원 여부부터 본다(증상: 설치 단계 14~26초 실패).
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +158,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: node audit.js --slot=${{ steps.slot.outputs.slot }} --date=${{ steps.slot.outputs.date }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}
+        run: node audit.js --slot=${{ steps.slot.outputs.slot }} --date=${{ steps.slot.outputs.date }}${{ github.event.inputs.force == 'true' && ' --force' || '' }}${{ github.event.inputs.dry_run == 'true' && ' --dry-run' || '' }}
 
       # 잡이 어떤 단계에서든 실패하면(seed 중단·npm·Playwright·audit FATAL·타임아웃) Slack DM으로 통지.
       #   '메시지가 안 왔다'를 사람이 눈치채야 하는 침묵 실패를 없앤다(dead-man 방어).

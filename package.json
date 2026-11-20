@@ -15,6 +15,6 @@
     "@slack/web-api": "^7.0.0",
     "dotenv": "^17.4.2",
     "googleapis": "^144.0.0",
-    "playwright": "^1.47.0"
+    "playwright": "^1.65.1"
   }
 }
