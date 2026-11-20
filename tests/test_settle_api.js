@@ -15,6 +15,8 @@ function fakeFetch(pages, { record } = {}) {
   };
 }
 
+const STATUS_API = 'https://apis.pluglink.kr/v101/managements/chargers/status';
+
 test('fetchStatusDevices: 1-based 페이징으로 전 페이지 수집', async () => {
   const urls = [];
   const pages = [[{ id: 1 }, { id: 2 }], [{ id: 3 }]];
@@ -22,7 +24,31 @@ test('fetchStatusDevices: 1-based 페이징으로 전 페이지 수집', async (
   assert.deepEqual(r.items.map(i => i.id), [1, 2, 3]);
   assert.equal(r.truncated, false);
   assert.ok(urls[0].includes('page=1') && urls[1].includes('page=2'), '1-based page 파라미터');
-  assert.ok(urls[0].includes('statusType=failedConnection'));
+});
+
+// 2026-11: search.pluglink.kr/v101/dashboards/status 폐기(403 'Missing Authentication Token')
+//   → 커넥트 홈 화면과 같은 Managements BFF 경로·필터를 쓴다.
+test('fetchStatusDevices: Managements BFF 경로 + 유형별 필터(커넥트 프론트와 동일)', async () => {
+  const expect = {
+    failedConnection: ['packetReceivedAt', 'now-30m/m'],
+    failedUsable: ['devices.connectors.status', 'Unavailable,Faulted'],
+    isError: ['devices.connectors.isError', 'true']
+  };
+  for (const [type, [key, val]] of Object.entries(expect)) {
+    const urls = [];
+    await fetchStatusDevices('tok', type, { fetchImpl: fakeFetch([[{ id: 1 }]], { record: urls }) });
+    const u = new URL(urls[0]);
+    assert.equal(`${u.origin}${u.pathname}`, STATUS_API, `${type}: 경로`);
+    assert.equal(u.searchParams.get(key), val, `${type}: 필터`);
+    assert.equal(u.searchParams.get('statusType'), null, `${type}: 구 API 파라미터 금지`);
+  }
+});
+
+test('fetchStatusDevices: 모르는 statusType은 호출 없이 throw', async () => {
+  let called = false;
+  const f = async () => { called = true; return { ok: true, status: 200, json: async () => ({ data: { content: [] } }) }; };
+  await assert.rejects(() => fetchStatusDevices('tok', 'bogus', { fetchImpl: f }), /statusType/);
+  assert.equal(called, false);
 });
 
 test('fetchStatusDevices: maxPages 상한 도달 시 truncated=true', async () => {
@@ -45,13 +71,16 @@ test('fetchStatusDevices: HTTP 오류 throw', async () => {
   await assert.rejects(() => fetchStatusDevices('tok', 'isError', { fetchImpl: bad }), /HTTP 401/);
 });
 
-test('fetchAccumulations: data 반환, 인증 헤더 포함', async () => {
+test('fetchAccumulations: counts 경로, data 반환, 인증 헤더 포함', async () => {
   let seenHeaders = null;
+  let seenUrl = null;
   const f = async (url, opts) => {
+    seenUrl = url;
     seenHeaders = opts.headers;
     return { ok: true, status: 200, json: async () => ({ data: { failedConnection: 1, failedUsable: 2, isError: 3 } }) };
   };
   const d = await fetchAccumulations('tokval', { fetchImpl: f });
+  assert.equal(seenUrl, `${STATUS_API}/counts`);
   assert.equal(d.isError, 3);
   assert.equal(seenHeaders.authorization, 'Bearer tokval');
   assert.equal(seenHeaders['x-channel'], 'PLUGLINK');
